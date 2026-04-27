@@ -166,13 +166,19 @@ function renderFbd(
     }
   }
 
+  // Shared scale across every bar so a 4.23 k/ft load draws ~42 %
+  // taller than a 2.98 k/ft load on the same FBD. With a per-bar max
+  // every uniform load lands at the same height regardless of size.
+  const wMaxAll = Math.max(
+    1e-6,
+    ...bars.flatMap((b) => [Math.abs(b.w0), Math.abs(b.w1)]),
+  );
   for (const bar of bars) {
     const xa = X(bar.x0);
     const xb = X(bar.x1);
-    const wMax = Math.max(Math.abs(bar.w0), Math.abs(bar.w1), 1e-6);
-    const SCALE = Math.min(55, 30 * (1 + wMax / 6));
-    const ha = (Math.abs(bar.w0) / wMax) * SCALE;
-    const hb = (Math.abs(bar.w1) / wMax) * SCALE;
+    const SCALE = Math.min(55, 30 * (1 + wMaxAll / 6));
+    const ha = (Math.abs(bar.w0) / wMaxAll) * SCALE;
+    const hb = (Math.abs(bar.w1) / wMaxAll) * SCALE;
     const ya = yBeam - ha - 2;
     const yb = yBeam - hb - 2;
     out.push(
