@@ -18,6 +18,14 @@ export type SolveRequest = {
    * omitted, defaults to "ft".
    */
   lengthUnit?: "in" | "ft" | "m";
+  /**
+   * Color theme for the rendered SVGs. "light" = white bg + dark text,
+   * "dark" = black bg + white text. The vivid accent colors (beam,
+   * load, V, M, θ, Δ) are tuned per theme for legibility. Defaults to
+   * "dark" when omitted, preserving the original look for any caller
+   * that hasn't opted in.
+   */
+  theme?: "light" | "dark";
 };
 
 export type ApiErrorCode =

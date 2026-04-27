@@ -11,7 +11,21 @@ import type {
 } from "./types";
 import type { SolveRequest } from "./types";
 
-const PALETTE = {
+type Palette = {
+  bg: string;
+  fg: string;
+  dim: string;
+  beam: string;
+  load: string;
+  support: string;
+  reaction: string;
+  shear: string;
+  moment: string;
+  theta: string;
+  delta: string;
+};
+
+const PALETTE_DARK: Palette = {
   bg: "#000",
   fg: "#fff",
   dim: "#6a6a6a",
@@ -24,6 +38,27 @@ const PALETTE = {
   theta: "#4aa3ff",
   delta: "#ff7aa2",
 };
+
+// Light-mode palette: same hue identity but tuned for legibility on a
+// white background — neon-yellow → amber, near-white-greens → forest
+// green, etc. Background and foreground swap.
+const PALETTE_LIGHT: Palette = {
+  bg: "#ffffff",
+  fg: "#1a1a1a",
+  dim: "#6b6b6b",
+  beam: "#dc2626",
+  load: "#d97706",
+  support: "#0057ff",
+  reaction: "#16a34a",
+  shear: "#d97706",
+  moment: "#16a34a",
+  theta: "#0057ff",
+  delta: "#be185d",
+};
+
+function paletteFor(theme: SolveRequest["theme"]): Palette {
+  return theme === "light" ? PALETTE_LIGHT : PALETTE_DARK;
+}
 
 const W = 880;
 const PAD = 48;
@@ -59,21 +94,28 @@ export function renderSvg(
   // back to force-per-{user-unit} for the label.
   const uW = (wKipPerIn: number) => wKipPerIn * lenScale;
 
-  const fbd = renderFbd(req, res, X, xs, ux, unit, uW);
-  const V = renderCurve(res, X, "V", PALETTE.shear, "V(x)");
-  const M = renderCurve(res, X, "M", PALETTE.moment, `M(x) [k·${unit}]`, {
+  const palette = paletteFor(req.theme);
+
+  const fbd = renderFbd(req, res, X, xs, ux, unit, uW, palette);
+  const V = renderCurve(res, X, "V", palette.shear, "V(x)", palette);
+  const M = renderCurve(res, X, "M", palette.moment, `M(x) [k·${unit}]`, palette, {
     sagBelow: true,
     valueScale: 1 / lenScale,
   });
-  const theta = renderCurve(res, X, "theta", PALETTE.theta, "θ(x)");
-  const delta = renderCurve(res, X, "delta", PALETTE.delta, "Δ(x)");
-  const all = renderAll(fbd, V, M, theta, delta, xs, X, ux, unit);
+  const theta = renderCurve(res, X, "theta", palette.theta, "θ(x)", palette);
+  const delta = renderCurve(res, X, "delta", palette.delta, "Δ(x)", palette);
+  const all = renderAll(fbd, V, M, theta, delta, xs, X, ux, unit, palette);
 
   return { fbd, V, M, theta, delta, all };
 }
 
-function svgWrap(width: number, height: number, body: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="background:${PALETTE.bg};font-family:ui-monospace,Menlo,monospace;display:block">${body}</svg>`;
+function svgWrap(
+  width: number,
+  height: number,
+  body: string,
+  palette: Palette,
+): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="background:${palette.bg};font-family:ui-monospace,Menlo,monospace;display:block">${body}</svg>`;
 }
 
 function escapeText(s: string): string {
@@ -131,6 +173,7 @@ function renderFbd(
   ux: (xInches: number) => number,
   unitLbl: string,
   uW: (wKipPerIn: number) => number,
+  palette: Palette,
 ): string {
   const H = 220;
   const yBeam = H * 0.5;
@@ -182,16 +225,16 @@ function renderFbd(
     const ya = yBeam - ha - 2;
     const yb = yBeam - hb - 2;
     out.push(
-      `<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" stroke="${PALETTE.load}" stroke-width="1.4"/>`,
-      `<line x1="${xa}" y1="${ya}" x2="${xa}" y2="${yBeam - 2}" stroke="${PALETTE.load}" stroke-width="1.2"/>`,
-      `<line x1="${xb}" y1="${yb}" x2="${xb}" y2="${yBeam - 2}" stroke="${PALETTE.load}" stroke-width="1.2"/>`,
+      `<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" stroke="${palette.load}" stroke-width="1.4"/>`,
+      `<line x1="${xa}" y1="${ya}" x2="${xa}" y2="${yBeam - 2}" stroke="${palette.load}" stroke-width="1.2"/>`,
+      `<line x1="${xb}" y1="${yb}" x2="${xb}" y2="${yBeam - 2}" stroke="${palette.load}" stroke-width="1.2"/>`,
     );
     const N = Math.max(3, Math.round((xb - xa) / 24));
     for (let n = 1; n <= N - 1; n++) {
       const t = n / N;
       const xi = xa + t * (xb - xa);
       const yi = ya + t * (yb - ya);
-      out.push(arrow(xi, yi, xi, yBeam - 3, PALETTE.load, 4));
+      out.push(arrow(xi, yi, xi, yBeam - 3, palette.load, 4));
     }
     const midX = (xa + xb) / 2;
     const midY = Math.min(ya, yb) - 6;
@@ -202,7 +245,7 @@ function renderFbd(
         ? `${fmt(w0Disp)} k/${unitLbl}`
         : `${fmt(w0Disp)} → ${fmt(w1Disp)} k/${unitLbl}`;
     out.push(
-      `<text x="${midX}" y="${midY}" fill="${PALETTE.load}" font-size="10" text-anchor="middle">${escapeText(lbl)}</text>`,
+      `<text x="${midX}" y="${midY}" fill="${palette.load}" font-size="10" text-anchor="middle">${escapeText(lbl)}</text>`,
     );
   }
 
@@ -217,9 +260,9 @@ function renderFbd(
       const down = pl.Fy < 0;
       const tipY = down ? cy - 3 : cy + 3;
       const tailY = down ? tipY - L : tipY + L;
-      out.push(arrow(cx, tailY, cx, tipY, PALETTE.load, 6));
+      out.push(arrow(cx, tailY, cx, tipY, palette.load, 6));
       out.push(
-        `<text x="${cx + 6}" y="${tailY + 10}" fill="${PALETTE.load}" font-size="10">${escapeText(fmt(Math.abs(pl.Fy)))}</text>`,
+        `<text x="${cx + 6}" y="${tailY + 10}" fill="${palette.load}" font-size="10">${escapeText(fmt(Math.abs(pl.Fy)))}</text>`,
       );
     }
   }
@@ -229,7 +272,7 @@ function renderFbd(
     const a = req.nodes[m.i];
     const b = req.nodes[m.j];
     out.push(
-      `<line x1="${X(a[0])}" y1="${yBeam}" x2="${X(b[0])}" y2="${yBeam}" stroke="${PALETTE.beam}" stroke-width="2.5" stroke-linecap="round"/>`,
+      `<line x1="${X(a[0])}" y1="${yBeam}" x2="${X(b[0])}" y2="${yBeam}" stroke="${palette.beam}" stroke-width="2.5" stroke-linecap="round"/>`,
     );
   }
 
@@ -240,17 +283,17 @@ function renderFbd(
     const cy = yBeam;
     if (sup.Rx && sup.Ry && sup.Rm) {
       out.push(
-        `<rect x="${cx - 12}" y="${cy}" width="24" height="10" fill="${PALETTE.support}" fill-opacity="0.35" stroke="${PALETTE.support}"/>`,
+        `<rect x="${cx - 12}" y="${cy}" width="24" height="10" fill="${palette.support}" fill-opacity="0.35" stroke="${palette.support}"/>`,
       );
     } else if (sup.Rx && sup.Ry) {
       out.push(
-        `<polygon points="${cx},${cy} ${cx - 10},${cy + 16} ${cx + 10},${cy + 16}" fill="${PALETTE.support}" stroke="${PALETTE.support}"/>`,
-        `<line x1="${cx - 14}" y1="${cy + 16}" x2="${cx + 14}" y2="${cy + 16}" stroke="${PALETTE.support}" stroke-width="1.2"/>`,
+        `<polygon points="${cx},${cy} ${cx - 10},${cy + 16} ${cx + 10},${cy + 16}" fill="${palette.support}" stroke="${palette.support}"/>`,
+        `<line x1="${cx - 14}" y1="${cy + 16}" x2="${cx + 14}" y2="${cy + 16}" stroke="${palette.support}" stroke-width="1.2"/>`,
       );
     } else if (sup.Ry) {
       out.push(
-        `<circle cx="${cx}" cy="${cy + 8}" r="6" fill="${PALETTE.support}" stroke="${PALETTE.support}"/>`,
-        `<line x1="${cx - 14}" y1="${cy + 16}" x2="${cx + 14}" y2="${cy + 16}" stroke="${PALETTE.support}" stroke-width="1.2"/>`,
+        `<circle cx="${cx}" cy="${cy + 8}" r="6" fill="${palette.support}" stroke="${palette.support}"/>`,
+        `<line x1="${cx - 14}" y1="${cy + 16}" x2="${cx + 14}" y2="${cy + 16}" stroke="${palette.support}" stroke-width="1.2"/>`,
       );
     }
   }
@@ -266,9 +309,9 @@ function renderFbd(
     const cy = yBeam + 30;
     const L = (Math.abs(r.Ry) / Rmax) * 36 + 4;
     if (Math.abs(r.Ry) > 1e-3) {
-      out.push(arrow(cx, cy + L, cx, cy + 3, PALETTE.reaction, 6));
+      out.push(arrow(cx, cy + L, cx, cy + 3, palette.reaction, 6));
       out.push(
-        `<text x="${cx}" y="${cy + L + 12}" fill="${PALETTE.reaction}" font-size="10" text-anchor="middle">${escapeText(fmt(r.Ry))}</text>`,
+        `<text x="${cx}" y="${cy + L + 12}" fill="${palette.reaction}" font-size="10" text-anchor="middle">${escapeText(fmt(r.Ry))}</text>`,
       );
     }
   }
@@ -276,15 +319,15 @@ function renderFbd(
   // node ticks (converted to caller's display unit)
   for (const x of xs) {
     out.push(
-      `<text x="${X(x)}" y="${H - 4}" fill="${PALETTE.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(ux(x)))}</text>`,
+      `<text x="${X(x)}" y="${H - 4}" fill="${palette.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(ux(x)))}</text>`,
     );
   }
 
   out.push(
-    `<text x="${W - PAD}" y="${20}" fill="${PALETTE.fg}" font-size="10" text-anchor="end" letter-spacing="2">FBD</text>`,
+    `<text x="${W - PAD}" y="${20}" fill="${palette.fg}" font-size="10" text-anchor="end" letter-spacing="2">FBD</text>`,
   );
 
-  return svgWrap(W, H, out.join(""));
+  return svgWrap(W, H, out.join(""), palette);
 }
 
 /**
@@ -338,6 +381,7 @@ function renderCurve(
   field: ExtremumField,
   color: string,
   label: string,
+  palette: Palette,
   opts: { sagBelow?: boolean; valueScale?: number } = {},
 ): string {
   const H = 150;
@@ -370,12 +414,13 @@ function renderCurve(
   return svgWrap(
     W,
     H,
-    `<line x1="${PAD}" y1="${yAxis}" x2="${W - PAD}" y2="${yAxis}" stroke="${PALETTE.dim}" stroke-width="0.8"/>` +
+    `<line x1="${PAD}" y1="${yAxis}" x2="${W - PAD}" y2="${yAxis}" stroke="${palette.dim}" stroke-width="0.8"/>` +
       (samples.length
         ? `<path d="${fillPath}" fill="${color}" fill-opacity="0.15"/><path d="${path}" fill="none" stroke="${color}" stroke-width="1.4"/>`
         : "") +
       `<text x="${W - PAD}" y="${14}" fill="${color}" font-size="10" text-anchor="end" letter-spacing="2">${escapeText(label)}</text>` +
       labels,
+    palette,
   );
 }
 
@@ -389,6 +434,7 @@ function renderAll(
   X: (x: number) => number,
   ux: (xInches: number) => number,
   unitLbl: string,
+  palette: Palette,
 ): string {
   // strip outer <svg> wrappers from each panel and stack them in one big SVG
   const strip = (s: string): string =>
@@ -410,13 +456,13 @@ function renderAll(
   const tickY = y + 10;
   for (const x of xs) {
     parts.push(
-      `<text x="${X(x)}" y="${tickY}" fill="${PALETTE.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(ux(x)))}</text>`,
+      `<text x="${X(x)}" y="${tickY}" fill="${palette.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(ux(x)))}</text>`,
     );
   }
   parts.push(
-    `<text x="${W - PAD}" y="${tickY}" fill="${PALETTE.dim}" font-size="9" text-anchor="end">x [${unitLbl}]</text>`,
+    `<text x="${W - PAD}" y="${tickY}" fill="${palette.dim}" font-size="9" text-anchor="end">x [${unitLbl}]</text>`,
   );
-  return svgWrap(W, y + 18, parts.join(""));
+  return svgWrap(W, y + 18, parts.join(""), palette);
 }
 
 export type Plotted = Plot;

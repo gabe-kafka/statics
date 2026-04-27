@@ -17,10 +17,14 @@ import type {
 } from "@/lib/api/types";
 
 // Colors chosen to echo the conjugate-method notebook palette.
+// Surface colors come from page-level CSS vars so the diagrams follow
+// the active light/dark theme (driven by prefers-color-scheme in
+// globals.css). Saturated accents are shared across both themes —
+// they're vivid enough to read on either background.
 const PALETTE = {
-  bg: "#000",
-  fg: "#fff",
-  dim: "#6a6a6a",
+  bg: "var(--bg)",
+  fg: "var(--text)",
+  dim: "var(--dim)",
   beam: "#e63946",
   load: "#ffd100",
   support: "#4aa3ff",
@@ -515,6 +519,11 @@ export function Diagrams({
     (a, b) => (Math.abs(b.d) > Math.abs(a.d) ? b : a),
     samples[0] ?? { x: 0, v: 0, m: 0, t: 0, d: 0 },
   );
+  const equilibrium =
+    state.kind === "ok"
+      ? computeEquilibrium(nodes, members, pointLoads, distLoads, reactions)
+      : null;
+  const peaks = state.kind === "ok" ? state.data.peaks : null;
 
   return (
     <div
@@ -522,6 +531,13 @@ export function Diagrams({
       style={{ background: PALETTE.bg, color: PALETTE.fg }}
     >
       <ApiStatusPill state={state} />
+      {(equilibrium || peaks || reactions.length > 0) && (
+        <CorrectnessPanel
+          equilibrium={equilibrium}
+          peaks={peaks}
+          reactions={reactions}
+        />
+      )}
       <svg
         viewBox={`0 0 ${W} ${H_TOP}`}
         width="100%"
@@ -763,6 +779,166 @@ export function Diagrams({
       </svg>
     </div>
   );
+}
+
+function CorrectnessPanel({
+  equilibrium,
+  peaks,
+  reactions,
+}: {
+  equilibrium: Equilibrium | null;
+  peaks: SolveResponse["peaks"] | null;
+  reactions: ReactionOut[];
+}) {
+  return (
+    <div
+      className="grid grid-cols-[1.15fr_1.2fr_1fr] gap-px border-b text-[10px]"
+      style={{ borderColor: PALETTE.dim, background: PALETTE.dim }}
+    >
+      <PanelGroup title="EQUILIBRIUM">
+        <Metric
+          label="ΣFx"
+          value={equilibrium?.sumFx ?? 0}
+          color={residualColor(equilibrium?.sumFx ?? 0)}
+        />
+        <Metric
+          label="ΣFy"
+          value={equilibrium?.sumFy ?? 0}
+          color={residualColor(equilibrium?.sumFy ?? 0)}
+        />
+        <Metric
+          label="ΣM0"
+          value={equilibrium?.sumM ?? 0}
+          color={residualColor(equilibrium?.sumM ?? 0)}
+        />
+      </PanelGroup>
+
+      <PanelGroup title="PEAKS">
+        <Metric label="V" value={peaks?.V.value ?? 0} color={PALETTE.shear} />
+        <Metric label="M" value={peaks?.M.value ?? 0} color={PALETTE.moment} />
+        <Metric label="θ" value={peaks?.theta.value ?? 0} color={PALETTE.theta} />
+        <Metric label="Δ" value={peaks?.delta.value ?? 0} color={PALETTE.delta} />
+      </PanelGroup>
+
+      <PanelGroup title="REACTIONS">
+        {reactions.length === 0 ? (
+          <span style={{ color: PALETTE.dim }}>none</span>
+        ) : (
+          reactions.map((r) => (
+            <span key={r.node} className="whitespace-nowrap">
+              <span style={{ color: PALETTE.dim }}>N{r.node}</span>{" "}
+              <span style={{ color: PALETTE.reaction }}>
+                Rx {fmt(r.Rx)} Ry {fmt(r.Ry)} M {fmt(r.M)}
+              </span>
+            </span>
+          ))
+        )}
+      </PanelGroup>
+    </div>
+  );
+}
+
+function PanelGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0 bg-surface px-4 py-2">
+      <div
+        className="mb-1 uppercase tracking-[0.12em]"
+        style={{ color: PALETTE.dim }}
+      >
+        {title}
+      </div>
+      <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1">{children}</div>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <span className="whitespace-nowrap">
+      <span style={{ color: PALETTE.dim }}>{label}</span>{" "}
+      <span style={{ color }}>{fmt(value)}</span>
+    </span>
+  );
+}
+
+type Equilibrium = {
+  sumFx: number;
+  sumFy: number;
+  sumM: number;
+};
+
+function computeEquilibrium(
+  nodes: Vec2[],
+  members: Member[],
+  pointLoads: PointLoad[],
+  distLoads: DistLoad[],
+  reactions: ReactionOut[],
+): Equilibrium {
+  let sumFx = 0;
+  let sumFy = 0;
+  let sumM = 0;
+
+  for (const [node, fx, fy] of pointLoads) {
+    const p = nodes[node];
+    if (!p) continue;
+    sumFx += fx;
+    sumFy += fy;
+    sumM += p[0] * fy - p[1] * fx;
+  }
+
+  for (const [member, wi, wj] of distLoads) {
+    const ij = members[member];
+    if (!ij) continue;
+    const a = nodes[ij[0]];
+    const b = nodes[ij[1]];
+    if (!a || !b) continue;
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const L = Math.hypot(dx, dy);
+    const fy = ((wi + wj) / 2) * L;
+    const denom = wi + wj;
+    const centroid =
+      Math.abs(denom) < 1e-12 ? 0.5 : (wi + 2 * wj) / (3 * denom);
+    const x = a[0] + dx * centroid;
+    sumFy += fy;
+    sumM += x * fy;
+  }
+
+  for (const r of reactions) {
+    const p = nodes[r.node];
+    if (!p) continue;
+    sumFx += r.Rx;
+    sumFy += r.Ry;
+    sumM += p[0] * r.Ry - p[1] * r.Rx + r.M;
+  }
+
+  return {
+    sumFx: cleanResidual(sumFx),
+    sumFy: cleanResidual(sumFy),
+    sumM: cleanResidual(sumM),
+  };
+}
+
+function cleanResidual(n: number): number {
+  return Math.abs(n) < 1e-8 ? 0 : n;
+}
+
+function residualColor(n: number): string {
+  return Math.abs(n) < 1e-6 ? PALETTE.reaction : "#ff7676";
 }
 
 function ApiStatusPill({ state }: { state: ApiState }) {
