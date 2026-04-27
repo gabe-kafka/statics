@@ -30,6 +30,12 @@ const PAD = 48;
 
 type Plot = "fbd" | "V" | "M" | "theta" | "delta";
 
+const INCHES_PER_UNIT: Record<NonNullable<SolveRequest["lengthUnit"]>, number> = {
+  in: 1,
+  ft: 12,
+  m: 39.3701,
+};
+
 export function renderSvg(
   req: SolveRequest,
   res: Pick<SolveResponse, "members" | "reactions">,
@@ -40,12 +46,22 @@ export function renderSvg(
   const xspan = Math.max(xmax - xmin, 1);
   const X = (x: number) => PAD + ((x - xmin) / xspan) * (W - 2 * PAD);
 
-  const fbd = renderFbd(req, res, X, xs);
+  // The data payload stays in API-internal units (in / k·in). Display
+  // labels on the SVGs are converted into the caller's preferred unit.
+  const unit = req.lengthUnit ?? "in";
+  const lenScale = INCHES_PER_UNIT[unit];
+  const ux = (xInches: number) => xInches / lenScale; // x-axis label
+  const uM = (mKipIn: number) => mKipIn / lenScale; // moment label
+
+  const fbd = renderFbd(req, res, X, xs, ux, unit);
   const V = renderCurve(res, X, "V", PALETTE.shear, "V(x)");
-  const M = renderCurve(res, X, "M", PALETTE.moment, "M(x)", { sagBelow: true });
+  const M = renderCurve(res, X, "M", PALETTE.moment, `M(x) [k·${unit}]`, {
+    sagBelow: true,
+    valueScale: 1 / lenScale,
+  });
   const theta = renderCurve(res, X, "theta", PALETTE.theta, "θ(x)");
   const delta = renderCurve(res, X, "delta", PALETTE.delta, "Δ(x)");
-  const all = renderAll(fbd, V, M, theta, delta, xs, X);
+  const all = renderAll(fbd, V, M, theta, delta, xs, X, ux, unit);
 
   return { fbd, V, M, theta, delta, all };
 }
@@ -106,6 +122,8 @@ function renderFbd(
   res: Pick<SolveResponse, "reactions">,
   X: (x: number) => number,
   xs: number[],
+  ux: (xInches: number) => number,
+  _unitLbl: string,
 ): string {
   const H = 200;
   const yBeam = H * 0.55;
@@ -216,10 +234,10 @@ function renderFbd(
     }
   }
 
-  // node ticks
+  // node ticks (converted to caller's display unit)
   for (const x of xs) {
     out.push(
-      `<text x="${X(x)}" y="${H - 4}" fill="${PALETTE.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(x))}</text>`,
+      `<text x="${X(x)}" y="${H - 4}" fill="${PALETTE.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(ux(x)))}</text>`,
     );
   }
 
@@ -236,13 +254,14 @@ function renderCurve(
   field: "V" | "M" | "theta" | "delta",
   color: string,
   label: string,
-  opts: { sagBelow?: boolean } = {},
+  opts: { sagBelow?: boolean; valueScale?: number } = {},
 ): string {
   const H = 150;
   const yAxis = H / 2;
   const samples = res.members.flatMap((m) => m.samples);
   const max = Math.max(1e-12, ...samples.map((s) => Math.abs(s[field])));
   const sign = opts.sagBelow ? +1 : -1;
+  const valueScale = opts.valueScale ?? 1;
   const yOf = (v: number) => yAxis + sign * (v / max) * (H / 2 - 12);
   const path = samples
     .map(
@@ -270,7 +289,7 @@ function renderCurve(
         : "") +
       `<text x="${W - PAD}" y="${14}" fill="${color}" font-size="10" text-anchor="end" letter-spacing="2">${escapeText(label)}</text>` +
       (samples.length
-        ? `<text x="${X(peak.x)}" y="${(yOf(peak[field]) - 4).toFixed(1)}" fill="${color}" font-size="9" text-anchor="middle">${escapeText(fmt(peak[field]))}</text>`
+        ? `<text x="${X(peak.x)}" y="${(yOf(peak[field]) - 4).toFixed(1)}" fill="${color}" font-size="9" text-anchor="middle">${escapeText(fmt(peak[field] * valueScale))}</text>`
         : ""),
   );
 }
@@ -283,6 +302,8 @@ function renderAll(
   delta: string,
   xs: number[],
   X: (x: number) => number,
+  ux: (xInches: number) => number,
+  unitLbl: string,
 ): string {
   // strip outer <svg> wrappers from each panel and stack them in one big SVG
   const strip = (s: string): string =>
@@ -300,13 +321,16 @@ function renderAll(
     parts.push(`<g transform="translate(0,${y})">${strip(p.svg)}</g>`);
     y += p.h + 8;
   }
-  // x-axis labels at the very bottom
+  // x-axis labels at the very bottom — converted to display unit.
   const tickY = y + 10;
   for (const x of xs) {
     parts.push(
-      `<text x="${X(x)}" y="${tickY}" fill="${PALETTE.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(x))}</text>`,
+      `<text x="${X(x)}" y="${tickY}" fill="${PALETTE.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(ux(x)))}</text>`,
     );
   }
+  parts.push(
+    `<text x="${W - PAD}" y="${tickY}" fill="${PALETTE.dim}" font-size="9" text-anchor="end">x [${unitLbl}]</text>`,
+  );
   return svgWrap(W, y + 18, parts.join(""));
 }
 

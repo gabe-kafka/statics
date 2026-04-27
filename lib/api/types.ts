@@ -11,6 +11,13 @@ export type SolveRequest = {
   hinges?: { node: number; memberSide?: "i" | "j" }[];
   samplesPerMember?: number;
   include?: ("data" | "svg")[];
+  /**
+   * Unit used to label x-axis ticks and moment values in the rendered
+   * SVGs. The numeric `data` payload is unaffected — sample values stay
+   * in API-internal units (inches for length, k·in for moment). When
+   * omitted, defaults to "in".
+   */
+  lengthUnit?: "in" | "ft" | "m";
 };
 
 export type ApiErrorCode =
