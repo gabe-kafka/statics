@@ -131,19 +131,43 @@ function renderFbd(
   const yBeam = H * 0.55;
   const out: string[] = [];
 
-  // distributed loads
-  for (let k = 0; k < (req.distLoads ?? []).length; k++) {
-    const dl = req.distLoads![k];
+  // Distributed loads: callers (e.g. the structural-terminal builder)
+  // fan a single user-load across every sub-member created by interior
+  // splits, so a continuous load arrives here as N adjacent entries
+  // with matching w at each shared node. Aggregate those runs back
+  // into one rendered band so the FBD shows ONE label per real load
+  // instead of N copies of the same number.
+  type Bar = { x0: number; x1: number; w0: number; w1: number };
+  const bars: Bar[] = [];
+  for (const dl of req.distLoads ?? []) {
     const m = req.members[dl.member];
     if (!m) continue;
     const a = req.nodes[m.i];
     const b = req.nodes[m.j];
-    const xa = X(a[0]);
-    const xb = X(b[0]);
-    const wMax = Math.max(Math.abs(dl.wi), Math.abs(dl.wj), 1e-6);
+    if (!a || !b) continue;
+    const x0 = a[0];
+    const x1 = b[0];
+    const last = bars[bars.length - 1];
+    if (
+      last &&
+      Math.abs(last.x1 - x0) < 1e-6 &&
+      Math.abs(last.w1 - dl.wi) < 1e-9
+    ) {
+      // Continuous with the previous run — extend it.
+      last.x1 = x1;
+      last.w1 = dl.wj;
+    } else {
+      bars.push({ x0, x1, w0: dl.wi, w1: dl.wj });
+    }
+  }
+
+  for (const bar of bars) {
+    const xa = X(bar.x0);
+    const xb = X(bar.x1);
+    const wMax = Math.max(Math.abs(bar.w0), Math.abs(bar.w1), 1e-6);
     const SCALE = Math.min(55, 30 * (1 + wMax / 6));
-    const ha = (Math.abs(dl.wi) / wMax) * SCALE;
-    const hb = (Math.abs(dl.wj) / wMax) * SCALE;
+    const ha = (Math.abs(bar.w0) / wMax) * SCALE;
+    const hb = (Math.abs(bar.w1) / wMax) * SCALE;
     const ya = yBeam - ha - 2;
     const yb = yBeam - hb - 2;
     out.push(
@@ -161,9 +185,9 @@ function renderFbd(
     const midX = (xa + xb) / 2;
     const midY = Math.min(ya, yb) - 6;
     const lbl =
-      Math.abs(dl.wi - dl.wj) < 1e-9
-        ? fmt(dl.wi)
-        : `${fmt(dl.wi)} → ${fmt(dl.wj)}`;
+      Math.abs(bar.w0 - bar.w1) < 1e-9
+        ? fmt(bar.w0)
+        : `${fmt(bar.w0)} → ${fmt(bar.w1)}`;
     out.push(
       `<text x="${midX}" y="${midY}" fill="${PALETTE.load}" font-size="10" text-anchor="middle">${escapeText(lbl)}</text>`,
     );
