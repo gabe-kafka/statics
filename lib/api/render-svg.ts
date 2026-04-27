@@ -54,8 +54,12 @@ export function renderSvg(
   const lenScale = INCHES_PER_UNIT[unit];
   const ux = (xInches: number) => xInches / lenScale; // x-axis label
   const uM = (mKipIn: number) => mKipIn / lenScale; // moment label
+  // Dist-load intensities arrive in force-per-inch (build-request side
+  // divides k/ft by 12 before sending). Multiply by lenScale to get
+  // back to force-per-{user-unit} for the label.
+  const uW = (wKipPerIn: number) => wKipPerIn * lenScale;
 
-  const fbd = renderFbd(req, res, X, xs, ux, unit);
+  const fbd = renderFbd(req, res, X, xs, ux, unit, uW);
   const V = renderCurve(res, X, "V", PALETTE.shear, "V(x)");
   const M = renderCurve(res, X, "M", PALETTE.moment, `M(x) [k·${unit}]`, {
     sagBelow: true,
@@ -125,7 +129,8 @@ function renderFbd(
   X: (x: number) => number,
   xs: number[],
   ux: (xInches: number) => number,
-  _unitLbl: string,
+  unitLbl: string,
+  uW: (wKipPerIn: number) => number,
 ): string {
   const H = 200;
   const yBeam = H * 0.55;
@@ -184,10 +189,12 @@ function renderFbd(
     }
     const midX = (xa + xb) / 2;
     const midY = Math.min(ya, yb) - 6;
+    const w0Disp = uW(bar.w0);
+    const w1Disp = uW(bar.w1);
     const lbl =
       Math.abs(bar.w0 - bar.w1) < 1e-9
-        ? fmt(bar.w0)
-        : `${fmt(bar.w0)} → ${fmt(bar.w1)}`;
+        ? `${fmt(w0Disp)} k/${unitLbl}`
+        : `${fmt(w0Disp)} → ${fmt(w1Disp)} k/${unitLbl}`;
     out.push(
       `<text x="${midX}" y="${midY}" fill="${PALETTE.load}" font-size="10" text-anchor="middle">${escapeText(lbl)}</text>`,
     );
