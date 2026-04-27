@@ -15,7 +15,7 @@ export type SolveRequest = {
    * Unit used to label x-axis ticks and moment values in the rendered
    * SVGs. The numeric `data` payload is unaffected — sample values stay
    * in API-internal units (inches for length, k·in for moment). When
-   * omitted, defaults to "in".
+   * omitted, defaults to "ft".
    */
   lengthUnit?: "in" | "ft" | "m";
 };

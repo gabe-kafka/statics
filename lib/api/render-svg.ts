@@ -48,7 +48,9 @@ export function renderSvg(
 
   // The data payload stays in API-internal units (in / k·in). Display
   // labels on the SVGs are converted into the caller's preferred unit.
-  const unit = req.lengthUnit ?? "in";
+  // Default to "ft" — moments shown in k·in are unreadable in
+  // structural practice; callers who actually want inches must opt in.
+  const unit = req.lengthUnit ?? "ft";
   const lenScale = INCHES_PER_UNIT[unit];
   const ux = (xInches: number) => xInches / lenScale; // x-axis label
   const uM = (mKipIn: number) => mKipIn / lenScale; // moment label
