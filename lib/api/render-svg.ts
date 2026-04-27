@@ -287,10 +287,55 @@ function renderFbd(
   return svgWrap(W, H, out.join(""));
 }
 
+/**
+ * Local maxes and mins on a sample series, plus non-trivial endpoints.
+ * "Local extremum" = strict 3-point window peak/valley; equality on one
+ * side is allowed so flat plateaus and step changes still expose a
+ * corner. Values within `valTol` of zero are dropped so the y=0 sweep
+ * between lobes doesn't get labeled. Adjacent picks within (xTol, valTol)
+ * are deduped — usually the shared-node samples from two adjoining
+ * members reading the same value at the same x.
+ */
+type ExtremumField = "V" | "M" | "theta" | "delta";
+function findExtrema<F extends ExtremumField>(
+  samples: { x: number; V: number; M: number; theta: number; delta: number }[],
+  field: F,
+): { x: number; V: number; M: number; theta: number; delta: number }[] {
+  if (samples.length === 0) return [];
+  const max = Math.max(1e-12, ...samples.map((s) => Math.abs(s[field])));
+  const valTol = 0.03 * max;
+  const xSpan =
+    samples[samples.length - 1].x - samples[0].x || Math.max(1, samples[0].x);
+  const xTol = Math.max(1e-9, 0.01 * xSpan);
+  const out: typeof samples = [];
+  const tryPush = (s: (typeof samples)[number]) => {
+    if (Math.abs(s[field]) < valTol) return;
+    const last = out[out.length - 1];
+    if (
+      last &&
+      Math.abs(last.x - s.x) < xTol &&
+      Math.abs(last[field] - s[field]) < valTol
+    )
+      return;
+    out.push(s);
+  };
+  tryPush(samples[0]);
+  for (let i = 1; i < samples.length - 1; i++) {
+    const a = samples[i - 1][field];
+    const b = samples[i][field];
+    const c = samples[i + 1][field];
+    const isMax = b >= a && b >= c && (b > a || b > c);
+    const isMin = b <= a && b <= c && (b < a || b < c);
+    if (isMax || isMin) tryPush(samples[i]);
+  }
+  tryPush(samples[samples.length - 1]);
+  return out;
+}
+
 function renderCurve(
   res: Pick<SolveResponse, "members">,
   X: (x: number) => number,
-  field: "V" | "M" | "theta" | "delta",
+  field: ExtremumField,
   color: string,
   label: string,
   opts: { sagBelow?: boolean; valueScale?: number } = {},
@@ -315,10 +360,13 @@ function renderCurve(
         .join(" ") +
       ` L ${X(samples[samples.length - 1].x).toFixed(1)} ${yAxis} Z`
     : "";
-  const peak = samples.reduce(
-    (a, b) => (Math.abs(b[field]) > Math.abs(a[field]) ? b : a),
-    samples[0] ?? ({ x: 0, V: 0, M: 0, theta: 0, delta: 0, s: 0 } as never),
-  );
+  const extrema = findExtrema(samples, field);
+  const labels = extrema
+    .map(
+      (e) =>
+        `<text x="${X(e.x).toFixed(1)}" y="${(yOf(e[field]) - 4).toFixed(1)}" fill="${color}" font-size="9" text-anchor="middle">${escapeText(fmt(e[field] * valueScale))}</text>`,
+    )
+    .join("");
   return svgWrap(
     W,
     H,
@@ -327,9 +375,7 @@ function renderCurve(
         ? `<path d="${fillPath}" fill="${color}" fill-opacity="0.15"/><path d="${path}" fill="none" stroke="${color}" stroke-width="1.4"/>`
         : "") +
       `<text x="${W - PAD}" y="${14}" fill="${color}" font-size="10" text-anchor="end" letter-spacing="2">${escapeText(label)}</text>` +
-      (samples.length
-        ? `<text x="${X(peak.x)}" y="${(yOf(peak[field]) - 4).toFixed(1)}" fill="${color}" font-size="9" text-anchor="middle">${escapeText(fmt(peak[field] * valueScale))}</text>`
-        : ""),
+      labels,
   );
 }
 
