@@ -132,8 +132,8 @@ function renderFbd(
   unitLbl: string,
   uW: (wKipPerIn: number) => number,
 ): string {
-  const H = 200;
-  const yBeam = H * 0.55;
+  const H = 220;
+  const yBeam = H * 0.5;
   const out: string[] = [];
 
   // Distributed loads: callers (e.g. the structural-terminal builder)
@@ -348,7 +348,7 @@ function renderAll(
   const strip = (s: string): string =>
     s.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
   const panels = [
-    { svg: fbd, h: 200 },
+    { svg: fbd, h: 220 },
     { svg: V, h: 150 },
     { svg: M, h: 150 },
     { svg: theta, h: 130 },
