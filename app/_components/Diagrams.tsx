@@ -90,8 +90,8 @@ export function Diagrams({
         Rm: !!rm,
       })),
       pointLoads: pointLoads
-        .filter(([, fx, fy]) => fx !== 0 || fy !== 0)
-        .map(([node, Fx, Fy]) => ({ node, Fx, Fy })),
+        .filter(([, fx, fy, moment = 0]) => fx !== 0 || fy !== 0 || moment !== 0)
+        .map(([node, Fx, Fy, M = 0]) => ({ node, Fx, Fy, M })),
       distLoads: distLoads.map(([member, wi, wj]) => ({ member, wi, wj })),
       pointSprings: pointSprings
         .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)
@@ -305,9 +305,9 @@ export function Diagrams({
     );
   });
 
-  pointLoads.forEach(([n, fx, fy], k) => {
+  pointLoads.forEach(([n, fx, fy, moment = 0], k) => {
     if (!nodes[n]) return;
-    if (fx === 0 && fy === 0) return;
+    if (fx === 0 && fy === 0 && moment === 0) return;
     const cx = frame.X(nodes[n][0]);
     const cy = frame.Y(nodes[n][1]);
     const L = 40;
@@ -353,6 +353,30 @@ export function Diagrams({
           color={PALETTE.load}
           head={6}
         />,
+      );
+    }
+    if (moment !== 0) {
+      fbdLoads.push(
+        <MomentArrow
+          key={`pl-${k}-m`}
+          cx={cx}
+          cy={cy - 18}
+          r={15}
+          positive={moment > 0}
+          color={PALETTE.load}
+        />,
+      );
+      fbdLoads.push(
+        <text
+          key={`pl-${k}-mt`}
+          x={cx + 20}
+          y={cy - 26}
+          fill={PALETTE.load}
+          fontSize={10}
+          fontFamily="var(--font-mono)"
+        >
+          {fmt(Math.abs(moment))}
+        </text>,
       );
     }
   });
@@ -929,12 +953,12 @@ function computeEquilibrium(
   let sumFy = 0;
   let sumM = 0;
 
-  for (const [node, fx, fy] of pointLoads) {
+  for (const [node, fx, fy, moment = 0] of pointLoads) {
     const p = nodes[node];
     if (!p) continue;
     sumFx += fx;
     sumFy += fy;
-    sumM += p[0] * fy - p[1] * fx;
+    sumM += p[0] * fy - p[1] * fx + moment;
   }
 
   for (const [member, wi, wj] of distLoads) {
@@ -1113,6 +1137,50 @@ function Arrow({
       <polygon points={`${x2},${y2} ${h1x},${h1y} ${h2x},${h2y}`} />
     </g>
   );
+}
+
+function MomentArrow({
+  cx,
+  cy,
+  r,
+  positive,
+  color,
+}: {
+  cx: number;
+  cy: number;
+  r: number;
+  positive: boolean;
+  color: string;
+}) {
+  const startAngle = positive ? 130 : 50;
+  const endAngle = positive ? -145 : 325;
+  const start = polarPoint(cx, cy, r, startAngle);
+  const end = polarPoint(cx, cy, r, endAngle);
+  const sweep = positive ? 0 : 1;
+  const tangent = ((endAngle + (positive ? -90 : 90)) * Math.PI) / 180;
+  const head = 5;
+  const hx1 = end.x - Math.cos(tangent) * head + Math.cos(tangent + Math.PI / 2) * head * 0.55;
+  const hy1 = end.y - Math.sin(tangent) * head + Math.sin(tangent + Math.PI / 2) * head * 0.55;
+  const hx2 = end.x - Math.cos(tangent) * head + Math.cos(tangent - Math.PI / 2) * head * 0.55;
+  const hy2 = end.y - Math.sin(tangent) * head + Math.sin(tangent - Math.PI / 2) * head * 0.55;
+
+  return (
+    <g stroke={color} fill={color} strokeWidth={1.3} strokeLinecap="round">
+      <path
+        d={`M ${start.x} ${start.y} A ${r} ${r} 0 1 ${sweep} ${end.x} ${end.y}`}
+        fill="none"
+      />
+      <polygon points={`${end.x},${end.y} ${hx1},${hy1} ${hx2},${hy2}`} />
+    </g>
+  );
+}
+
+function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
+  const angle = (angleDeg * Math.PI) / 180;
+  return {
+    x: cx + Math.cos(angle) * r,
+    y: cy - Math.sin(angle) * r,
+  };
 }
 
 function fmt(n: number): string {

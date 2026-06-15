@@ -22,7 +22,7 @@ export type ParsedDesignFields = {
   nodes: Vec2[];
   members: [number, number][];
   fixity: [number, number, number, number][];
-  pointLoads: [number, number, number][];
+  pointLoads: [number, number, number, number][];
   distLoads: [number, number, number][];
   pointSprings: [number, number, number, number][];
   uniformSprings: [number, number][];
@@ -32,7 +32,7 @@ export type ParsedDesignFields = {
 export const INPUTS: readonly InputSpec[] = [
   { key: "nodes", label: "NODES", columns: ["x", "y"] },
   { key: "members", label: "MEMBERS", columns: ["i", "j"] },
-  { key: "pointLoads", label: "POINT LOADS", columns: ["node", "Fx", "Fy"] },
+  { key: "pointLoads", label: "POINT LOADS", columns: ["node", "Fx", "Fy", "M"] },
   { key: "distLoads", label: "DIST LOADS", columns: ["member", "w_i", "w_j"] },
   { key: "fixity", label: "FIXITY", columns: ["node", "Rx", "Ry", "Rm"] },
   { key: "pointSprings", label: "POINT SPRINGS", columns: ["node", "Kx", "Ky", "Km"] },
@@ -43,7 +43,7 @@ export const INPUTS: readonly InputSpec[] = [
 export const DEFAULT_FIELDS: Fields = {
   nodes: "(0, 0)\n(15, 0)\n(31, 0)",
   members: "(0, 1)\n(1, 2)",
-  pointLoads: "(1, 0, -10)",
+  pointLoads: "(1, 0, -10, 0)",
   distLoads: "(0, -2.98, -2.98)\n(1, -3.50, -5.64)",
   fixity: "(0, 1, 1, 0)\n(2, 0, 1, 0)",
   pointSprings: "",
@@ -105,7 +105,13 @@ export function parseFields(fields: Fields): ParsedDesignFields {
     ),
     pointLoads: parseRows(fields.pointLoads).map(
       (r) =>
-        [Number(r[0]) || 0, Number(r[1]) || 0, Number(r[2]) || 0] as [
+        [
+          Number(r[0]) || 0,
+          Number(r[1]) || 0,
+          Number(r[2]) || 0,
+          Number(r[3]) || 0,
+        ] as [
+          number,
           number,
           number,
           number,

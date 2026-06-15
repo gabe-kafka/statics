@@ -1,0 +1,14 @@
+{
+  "name": "point moment cantilever",
+  "request": {
+    "nodes": [
+      [0, 0],
+      [10, 0]
+    ],
+    "members": [{ "i": 0, "j": 1, "E": 29000, "I": 100, "A": 10 }],
+    "supports": [{ "node": 0, "Rx": true, "Ry": true, "Rm": true }],
+    "pointLoads": [{ "node": 1, "Fx": 0, "Fy": 0, "M": 25 }],
+    "samplesPerMember": 41,
+    "include": ["data"]
+  }
+}

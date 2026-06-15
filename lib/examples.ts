@@ -32,7 +32,7 @@ export const GALLERY_EXAMPLES: readonly GalleryExample[] = [
     fields: fields({
       nodes: "(0, 0)\n(5, 0)\n(10, 0)",
       members: "(0, 1)\n(1, 2)",
-      pointLoads: "(1, 0, -10)",
+      pointLoads: "(1, 0, -10, 0)",
       distLoads: "",
       fixity: "(0, 1, 1, 0)\n(2, 0, 1, 0)",
       hinges: "",
@@ -83,7 +83,7 @@ export const GALLERY_EXAMPLES: readonly GalleryExample[] = [
     fields: fields({
       nodes: "(0, 0)\n(10, 0)",
       members: "(0, 1)",
-      pointLoads: "(1, 0, -10)",
+      pointLoads: "(1, 0, -10, 0)",
       distLoads: "",
       fixity: "(0, 1, 1, 1)",
       hinges: "",
@@ -129,8 +129,8 @@ export function solveRequestFromFields(
       Rm: !!rm,
     })),
     pointLoads: pointLoads
-      .filter(([, fx, fy]) => fx !== 0 || fy !== 0)
-      .map(([node, Fx, Fy]) => ({ node, Fx, Fy })),
+      .filter(([, fx, fy, moment = 0]) => fx !== 0 || fy !== 0 || moment !== 0)
+      .map(([node, Fx, Fy, M = 0]) => ({ node, Fx, Fy, M })),
     distLoads: distLoads.map(([member, wi, wj]) => ({ member, wi, wj })),
     pointSprings: pointSprings
       .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)

@@ -262,6 +262,26 @@ export const solverCases: SolverCase[] = [
     },
   },
   {
+    name: "cantilever with end point moment",
+    input: base({
+      nodes: [
+        [0, 0],
+        [10, 0],
+      ],
+      members: [[0, 1]],
+      fixity: [[0, 1, 1, 1]],
+      pointLoads: [[1, 0, 0, 25]],
+      distLoads: [],
+    }),
+    expect: {
+      reactions: [{ node: 0, M: -25 }],
+      samples: [
+        { member: 0, s: 0, V: 0, M: 25 },
+        { member: 0, s: 10, V: 0, M: 25 },
+      ],
+    },
+  },
+  {
     name: "cantilever with tip point spring",
     input: base({
       nodes: [

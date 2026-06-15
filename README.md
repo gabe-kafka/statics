@@ -25,7 +25,7 @@ curl -X POST https://statics.kafkadesign.io/api/v1/solve \
       {"node":0,"Rx":true,"Ry":true,"Rm":false},
       {"node":2,"Rx":false,"Ry":true,"Rm":false}
     ],
-    "pointLoads": [{"node":1,"Fx":0,"Fy":-10}],
+    "pointLoads": [{"node":1,"Fx":0,"Fy":-10,"M":0}],
     "distLoads": [
       {"member":0,"wi":-2.98,"wj":-2.98},
       {"member":1,"wi":-3.50,"wj":-5.64}
@@ -74,7 +74,7 @@ member-local transverse foundation stiffness:
 
 ### Sign convention
 
-World `+y` is up. Loads given in `+y`; downward loads are negative. Units pass through (kip / in / ksi works; the solver doesn't enforce them). Each member's `E`, `I`, and `A` are honored independently as `E·I` and `E·A`; mixed sections are supported.
+World `+y` is up. Loads given in `+y`; downward loads are negative. Point-load `M` is a nodal moment, positive counterclockwise. Units pass through (kip / in / ksi works; the solver doesn't enforce them). Each member's `E`, `I`, and `A` are honored independently as `E·I` and `E·A`; mixed sections are supported.
 
 ### Failure modes
 

@@ -194,6 +194,41 @@ function arrow(
   );
 }
 
+function momentArrow(
+  cx: number,
+  cy: number,
+  r: number,
+  positive: boolean,
+  color: string,
+): string {
+  const startAngle = positive ? 130 : 50;
+  const endAngle = positive ? -145 : 325;
+  const start = polarPoint(cx, cy, r, startAngle);
+  const end = polarPoint(cx, cy, r, endAngle);
+  const sweep = positive ? 0 : 1;
+  const tangent = ((endAngle + (positive ? -90 : 90)) * Math.PI) / 180;
+  const head = 5;
+  const hx1 = end.x - Math.cos(tangent) * head + Math.cos(tangent + Math.PI / 2) * head * 0.55;
+  const hy1 = end.y - Math.sin(tangent) * head + Math.sin(tangent + Math.PI / 2) * head * 0.55;
+  const hx2 = end.x - Math.cos(tangent) * head + Math.cos(tangent - Math.PI / 2) * head * 0.55;
+  const hy2 = end.y - Math.sin(tangent) * head + Math.sin(tangent - Math.PI / 2) * head * 0.55;
+
+  return (
+    `<g stroke="${color}" fill="${color}" stroke-width="1.3" stroke-linecap="round">` +
+    `<path d="M ${start.x} ${start.y} A ${r} ${r} 0 1 ${sweep} ${end.x} ${end.y}" fill="none"/>` +
+    `<polygon points="${end.x},${end.y} ${hx1},${hy1} ${hx2},${hy2}"/>` +
+    `</g>`
+  );
+}
+
+function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
+  const angle = (angleDeg * Math.PI) / 180;
+  return {
+    x: cx + Math.cos(angle) * r,
+    y: cy - Math.sin(angle) * r,
+  };
+}
+
 function renderFbd(
   req: SolveRequest,
   res: Pick<SolveResponse, "reactions">,
@@ -280,7 +315,8 @@ function renderFbd(
   // point loads
   for (const pl of req.pointLoads ?? []) {
     if (!req.nodes[pl.node]) continue;
-    if (pl.Fx === 0 && pl.Fy === 0) continue;
+    const moment = pl.M ?? 0;
+    if (pl.Fx === 0 && pl.Fy === 0 && moment === 0) continue;
     const cx = frame.X(req.nodes[pl.node][0]);
     const cy = frame.Y(req.nodes[pl.node][1]);
     const L = 40;
@@ -291,6 +327,12 @@ function renderFbd(
       out.push(arrow(cx, tailY, cx, tipY, palette.load, 6));
       out.push(
         `<text x="${cx + 6}" y="${tailY + 10}" fill="${palette.load}" font-size="10">${escapeText(fmt(Math.abs(pl.Fy)))}</text>`,
+      );
+    }
+    if (moment !== 0) {
+      out.push(momentArrow(cx, cy - 18, 15, moment > 0, palette.load));
+      out.push(
+        `<text x="${cx + 20}" y="${cy - 26}" fill="${palette.load}" font-size="10">${escapeText(fmt(Math.abs(moment)))}</text>`,
       );
     }
   }
