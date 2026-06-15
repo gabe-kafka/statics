@@ -233,16 +233,48 @@ export function Diagrams({
   const samples: Sample[] = [];
   const reactions: ReactionOut[] =
     state.kind === "ok" ? state.data.reactions : [];
-  const pointReactionNodes = new Set<number>();
+  const reactionMasks = new Map<
+    number,
+    { Rx: boolean; Ry: boolean; M: boolean }
+  >();
+  const addReactionMask = (
+    node: number,
+    next: { Rx?: boolean; Ry?: boolean; M?: boolean },
+  ) => {
+    const mask = reactionMasks.get(node) ?? { Rx: false, Ry: false, M: false };
+    reactionMasks.set(node, {
+      Rx: mask.Rx || !!next.Rx,
+      Ry: mask.Ry || !!next.Ry,
+      M: mask.M || !!next.M,
+    });
+  };
   fixity.forEach(([node, rx, ry, rm]) => {
-    if (rx || ry || rm) pointReactionNodes.add(node);
+    addReactionMask(node, { Rx: !!rx, Ry: !!ry, M: !!rm });
   });
   pointSprings.forEach(([node, kx, ky, km]) => {
-    if (kx !== 0 || ky !== 0 || km !== 0) pointReactionNodes.add(node);
+    addReactionMask(node, {
+      Rx: kx !== 0,
+      Ry: ky !== 0,
+      M: km !== 0,
+    });
   });
-  const pointReactions = reactions.filter((reaction) =>
-    pointReactionNodes.has(reaction.node),
-  );
+  const pointReactions = reactions
+    .map((reaction) => {
+      const mask = reactionMasks.get(reaction.node);
+      if (!mask) return null;
+      return {
+        node: reaction.node,
+        Rx: mask.Rx ? reaction.Rx : 0,
+        Ry: mask.Ry ? reaction.Ry : 0,
+        M: mask.M ? reaction.M : 0,
+      };
+    })
+    .filter(
+      (reaction): reaction is ReactionOut =>
+        !!reaction &&
+        Math.abs(reaction.Rx) + Math.abs(reaction.Ry) + Math.abs(reaction.M) >
+          1e-6,
+    );
   if (state.kind === "ok") {
     state.data.members.forEach((mr, idx) => {
       const station0 = idx === 0 ? 0 : stationEnds[idx - 1];
