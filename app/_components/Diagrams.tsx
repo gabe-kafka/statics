@@ -179,7 +179,7 @@ export function Diagrams({
         const json = (await res.json()) as SolveResponse | ApiError;
         if (id !== reqIdRef.current) return;
         if (!json.ok) {
-          setState({ kind: "error", message: json.message || json.error });
+          setState({ kind: "error", message: formatApiError(json) });
           return;
         }
         setState({ kind: "ok", data: json });
@@ -622,6 +622,15 @@ export function Diagrams({
     }
   });
 
+  const nodeLabelEls = nodes.map(([x, y], idx) => (
+    <NodeLabel
+      key={`node-label-${idx}`}
+      x={frame.X(x)}
+      y={frame.Y(y)}
+      label={`N${idx + 1}`}
+    />
+  ));
+
   // ─── V and M paths ─────────────────────────────────────────────────
   const vPath = samples
     .map((s, i) => {
@@ -750,6 +759,7 @@ export function Diagrams({
           {supports}
           {pointSpringEls}
           {reactionEls}
+          {nodeLabelEls}
           <SectionLabel
             x={W - PAD}
             y={16}
@@ -1031,7 +1041,7 @@ function CorrectnessPanel({
         ) : (
           reactions.map((r) => (
             <span key={r.node} className="whitespace-nowrap">
-              <span style={{ color: PALETTE.dim }}>N{r.node}</span>{" "}
+              <span style={{ color: PALETTE.dim }}>N{r.node + 1}</span>{" "}
               <span style={{ color: PALETTE.reaction }}>
                 Rx {fmt(r.Rx)} Ry {fmt(r.Ry)} M {fmt(r.M)}
               </span>
@@ -1146,6 +1156,29 @@ function residualColor(n: number): string {
   return Math.abs(n) < 1e-6 ? PALETTE.reaction : "#ff7676";
 }
 
+function formatApiError(error: ApiError): string {
+  if (error.error === "disconnected_substructure") {
+    const floatingNodes = nodesFromErrorDetails(error.details, "floatingNodes");
+    if (floatingNodes.length > 0) {
+      return `Nodes [${floatingNodes.map(formatNodeLabel).join(", ")}] are not connected to any support.`;
+    }
+  }
+  return error.message || error.error;
+}
+
+function nodesFromErrorDetails(details: unknown, key: string): number[] {
+  if (!details || typeof details !== "object") return [];
+  const value = (details as Record<string, unknown>)[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (node): node is number => Number.isInteger(node) && node >= 0,
+  );
+}
+
+function formatNodeLabel(node: number): string {
+  return `N${node + 1}`;
+}
+
 function projectFrame(
   nodes: Vec2[],
   width: number,
@@ -1241,6 +1274,34 @@ function SectionLabel({
     >
       {text}
     </text>
+  );
+}
+
+function NodeLabel({
+  x,
+  y,
+  label,
+}: {
+  x: number;
+  y: number;
+  label: string;
+}) {
+  return (
+    <g pointerEvents="none">
+      <circle cx={x} cy={y} r={2.6} fill={PALETTE.support} />
+      <text
+        x={x + 7}
+        y={y - 8}
+        fontSize={10}
+        fill={PALETTE.support}
+        stroke={PALETTE.bg}
+        strokeWidth={3}
+        paintOrder="stroke"
+        fontFamily="var(--font-mono)"
+      >
+        {label}
+      </text>
+    </g>
   );
 }
 
