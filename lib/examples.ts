@@ -108,6 +108,26 @@ export const GALLERY_EXAMPLES: readonly GalleryExample[] = [
     }),
     known: ["RAy = 7.5", "RBy = 25", "RCy = 7.5", "M over middle support = -25"],
   },
+  {
+    id: "uniform-spring-foundation",
+    title: "Uniform Spring Foundation",
+    description: "44 ft beam supported by a 5 kip/in/ft transverse spring foundation.",
+    E: DEFAULT_E,
+    I: DEFAULT_I,
+    A: DEFAULT_A,
+    fields: fields({
+      nodes: "(0, 0)\n(44, 0)",
+      members: "(0, 1)",
+      loadCases: "(D, Dead)\n(L, Live)",
+      loadCombinations: "(SERVICE, D, 1)",
+      pointLoads: "(1, 0, -20, 0, D)",
+      distLoads: "(0, -0.75, -0.75, D)",
+      fixity: "(0, 1, 0, 0)",
+      uniformSprings: "(0, 5)",
+      hinges: "",
+    }),
+    known: ["L = 44 ft", "k = 5 kip/in/ft", "Tip load = 20 kip", "w = 0.75 kip/ft"],
+  },
 ];
 
 export function solveRequestFromFields(
