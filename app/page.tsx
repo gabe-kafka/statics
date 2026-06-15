@@ -36,6 +36,8 @@ export default function Home() {
   const {
     nodes,
     members,
+    loadCases,
+    loadCombinations,
     fixity,
     pointLoads,
     distLoads,
@@ -230,6 +232,8 @@ export default function Home() {
             <Diagrams
               nodes={nodes}
               members={members}
+              loadCases={loadCases}
+              loadCombinations={loadCombinations}
               pointLoads={pointLoads}
               distLoads={distLoads}
               pointSprings={pointSprings}

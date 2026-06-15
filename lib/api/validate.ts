@@ -140,7 +140,7 @@ export function validate(req: SolveRequest): ApiError | null {
     if (!isNonnegativeFinite(spring.k))
       return err(
         "invalid_input",
-        `uniformSprings[${s}] must have finite non-negative k.`,
+        `uniformSprings[${s}] must have finite non-negative k (force/deflection/length).`,
         { field: `uniformSprings[${s}].k`, value: spring.k },
       );
   }

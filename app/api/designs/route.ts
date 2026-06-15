@@ -25,6 +25,8 @@ export async function POST(req: Request) {
     name: string;
     nodes?: string;
     members?: string;
+    loadCases?: string;
+    loadCombinations?: string;
     pointLoads?: string;
     distLoads?: string;
     fixity?: string;
@@ -40,6 +42,8 @@ export async function POST(req: Request) {
     name: body.name.trim(),
     nodes: body.nodes ?? "",
     members: body.members ?? "",
+    loadCases: body.loadCases ?? "",
+    loadCombinations: body.loadCombinations ?? "",
     pointLoads: body.pointLoads ?? "",
     distLoads: body.distLoads ?? "",
     fixity: body.fixity ?? "",

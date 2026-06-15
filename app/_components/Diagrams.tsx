@@ -1,15 +1,26 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
-  DistLoad,
   Fixity,
   Member,
-  PointLoad,
   PointSpring,
   UniformSpring,
   Vec2,
 } from "@/lib/solver";
+import type {
+  DistLoadRow,
+  LoadCase,
+  LoadCombination,
+  PointLoadRow,
+} from "@/lib/design-fields";
+import {
+  combineLoads,
+  combinationOptions,
+  defaultCombinationId,
+  hasCombination,
+  resolveCombinationId,
+} from "@/lib/load-combinations";
 import type {
   ReactionOut,
   SampleOut,
@@ -40,8 +51,10 @@ const PALETTE = {
 type Props = {
   nodes: Vec2[];
   members: Member[];
-  pointLoads: PointLoad[];
-  distLoads: DistLoad[];
+  loadCases: LoadCase[];
+  loadCombinations: LoadCombination[];
+  pointLoads: PointLoadRow[];
+  distLoads: DistLoadRow[];
   pointSprings: PointSpring[];
   uniformSprings: UniformSpring[];
   fixity: Fixity[];
@@ -64,6 +77,8 @@ const SAMPLES_PER_MEMBER = 41;
 export function Diagrams({
   nodes,
   members,
+  loadCases,
+  loadCombinations,
   pointLoads,
   distLoads,
   pointSprings,
@@ -77,7 +92,42 @@ export function Diagrams({
   onChangeI,
 }: Props) {
   const [state, setState] = useState<ApiState>({ kind: "idle" });
+  const [runId, setRunId] = useState(0);
+  const [selectedCombinationId, setSelectedCombinationId] = useState(() =>
+    defaultCombinationId(loadCombinations),
+  );
   const reqIdRef = useRef(0);
+  const comboOptions = useMemo(
+    () => combinationOptions(loadCombinations),
+    [loadCombinations],
+  );
+  const activeCombinationId = hasCombination(loadCombinations, selectedCombinationId)
+    ? selectedCombinationId
+    : defaultCombinationId(loadCombinations);
+  const combinedLoads = useMemo(
+    () =>
+      combineLoads({
+        pointLoads,
+        distLoads,
+        loadCases,
+        loadCombinations,
+        combinationId: activeCombinationId,
+      }),
+    [pointLoads, distLoads, loadCases, loadCombinations, activeCombinationId],
+  );
+
+  const runCombination = () => {
+    const answer = window.prompt("which load comb do you want", activeCombinationId);
+    if (answer === null) return;
+    const next = answer.trim();
+    if (!next) return;
+    if (!hasCombination(loadCombinations, next)) {
+      window.alert(`Unknown load combination. Available: ${comboOptions.join(", ")}`);
+      return;
+    }
+    setSelectedCombinationId(resolveCombinationId(loadCombinations, next));
+    setRunId((value) => value + 1);
+  };
 
   useEffect(() => {
     const req: SolveRequest = {
@@ -89,10 +139,14 @@ export function Diagrams({
         Ry: !!ry,
         Rm: !!rm,
       })),
-      pointLoads: pointLoads
+      pointLoads: combinedLoads.pointLoads
         .filter(([, fx, fy, moment = 0]) => fx !== 0 || fy !== 0 || moment !== 0)
         .map(([node, Fx, Fy, M = 0]) => ({ node, Fx, Fy, M })),
-      distLoads: distLoads.map(([member, wi, wj]) => ({ member, wi, wj })),
+      distLoads: combinedLoads.distLoads.map(([member, wi, wj]) => ({
+        member,
+        wi,
+        wj,
+      })),
       pointSprings: pointSprings
         .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)
         .map(([node, Kx, Ky, Km]) => ({ node, Kx, Ky, Km })),
@@ -143,8 +197,7 @@ export function Diagrams({
   }, [
     nodes,
     members,
-    pointLoads,
-    distLoads,
+    combinedLoads,
     pointSprings,
     uniformSprings,
     fixity,
@@ -152,6 +205,7 @@ export function Diagrams({
     E,
     I,
     A,
+    runId,
   ]);
 
   const W = 880;
@@ -219,7 +273,7 @@ export function Diagrams({
   const fbdLoads: React.ReactElement[] = [];
 
   // Distributed loads: render each as a top bar + downward arrows onto beam.
-  distLoads.forEach(([mIdx, wi, wj], k) => {
+  combinedLoads.distLoads.forEach(([mIdx, wi, wj], k) => {
     const m = members[mIdx];
     if (!m) return;
     const a = nodes[m[0]];
@@ -305,7 +359,7 @@ export function Diagrams({
     );
   });
 
-  pointLoads.forEach(([n, fx, fy, moment = 0], k) => {
+  combinedLoads.pointLoads.forEach(([n, fx, fy, moment = 0], k) => {
     if (!nodes[n]) return;
     if (fx === 0 && fy === 0 && moment === 0) return;
     const cx = frame.X(nodes[n][0]);
@@ -582,7 +636,13 @@ export function Diagrams({
   );
   const equilibrium =
     state.kind === "ok"
-      ? computeEquilibrium(nodes, members, pointLoads, distLoads, reactions)
+      ? computeEquilibrium(
+          nodes,
+          members,
+          combinedLoads.pointLoads,
+          combinedLoads.distLoads,
+          reactions,
+        )
       : null;
   const peaks = state.kind === "ok" ? state.data.peaks : null;
 
@@ -723,6 +783,23 @@ export function Diagrams({
           background: "#0b0b0b",
         }}
       >
+        <button
+          type="button"
+          onClick={runCombination}
+          className="h-6 border px-2 font-mono text-[10px] uppercase tracking-[0.08em]"
+          style={{
+            background: "#000",
+            borderColor: PALETTE.dim,
+            color: PALETTE.fg,
+          }}
+          title={`Current load combination: ${activeCombinationId}`}
+        >
+          RUN
+        </button>
+        <span style={{ color: PALETTE.dim }}>
+          COMBO{" "}
+          <span style={{ color: PALETTE.reaction }}>{activeCombinationId}</span>
+        </span>
         <span style={{ color: PALETTE.dim }}>MATERIAL</span>
         <label className="flex items-center gap-2">
           <span>E</span>
@@ -945,8 +1022,8 @@ type Equilibrium = {
 function computeEquilibrium(
   nodes: Vec2[],
   members: Member[],
-  pointLoads: PointLoad[],
-  distLoads: DistLoad[],
+  pointLoads: [number, number, number, number][],
+  distLoads: [number, number, number][],
   reactions: ReactionOut[],
 ): Equilibrium {
   let sumFx = 0;

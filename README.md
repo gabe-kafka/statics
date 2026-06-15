@@ -63,7 +63,9 @@ Use `hinges` for explicit member-end moment releases:
 ```
 
 Use `pointSprings` for nodal ground springs and `uniformSprings` for
-member-local transverse foundation stiffness:
+member-local transverse foundation stiffness. The uniform spring `k` is a
+distributed stiffness: force per transverse deflection per member length
+(for example, `kip/in/ft`):
 
 ```json
 {
@@ -71,6 +73,11 @@ member-local transverse foundation stiffness:
   "uniformSprings": [{ "member": 0, "k": 25 }]
 }
 ```
+
+In the web app, load cases and load combinations are table-driven. `LOAD CASES`
+uses `(case, label)`, `LOAD COMBINATIONS` uses one row per term
+`(combo, case, factor)`, and point/distributed load rows end with a `case`
+column. The `RUN` control prompts for the combination name to analyze.
 
 ### Sign convention
 

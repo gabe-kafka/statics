@@ -52,13 +52,7 @@ export function TableModal({
     if (!pendingFocusRef.current || !gridRef.current) return;
     const [ri, ci] = pendingFocusRef.current;
     pendingFocusRef.current = null;
-    const el = gridRef.current.querySelector<HTMLInputElement>(
-      `[data-cell="${ri}-${ci}"]`,
-    );
-    if (el) {
-      el.focus();
-      el.select();
-    }
+    focusCell(gridRef.current, ri, ci);
   });
 
   const inSel = (ri: number, ci: number) => {
@@ -67,6 +61,13 @@ export function TableModal({
     const [c1, c2] = [Math.min(sel.a[1], sel.b[1]), Math.max(sel.a[1], sel.b[1])];
     return ri >= r1 && ri <= r2 && ci >= c1 && ci <= c2;
   };
+  const cellStyle = (ri: number, ci: number) =>
+    inSel(ri, ci)
+      ? {
+          backgroundColor:
+            "color-mix(in srgb, var(--accent) 25%, var(--surface))",
+        }
+      : undefined;
 
   const onCellDown = (ri: number, ci: number) => {
     anchorRef.current = [ri, ci];
@@ -143,13 +144,7 @@ export function TableModal({
       pendingFocusRef.current = [targetRi, ci];
       addRow();
     } else {
-      const el = gridRef.current?.querySelector<HTMLInputElement>(
-        `[data-cell="${targetRi}-${ci}"]`,
-      );
-      if (el) {
-        el.focus();
-        el.select();
-      }
+      focusCell(gridRef.current, targetRi, ci);
     }
   };
 
@@ -242,28 +237,44 @@ export function TableModal({
             <div className="bg-bg" />
             {rows.map((row, ri) => (
               <Fragment key={ri}>
-                {spec.columns.map((_, ci) => (
-                  <input
-                    key={ci}
-                    data-cell={`${ri}-${ci}`}
-                    value={toDisplayCell(spec, ci, row[ci] ?? "")}
-                    spellCheck={false}
-                    onChange={(e) => setCell(ri, ci, e.target.value)}
-                    onPaste={(e) => onCellPaste(e, ri, ci)}
-                    onKeyDown={(e) => onCellKeyDown(e, ri, ci)}
-                    onMouseDown={() => onCellDown(ri, ci)}
-                    onMouseEnter={(e) => onCellEnter(e, ri, ci)}
-                    style={
-                      inSel(ri, ci)
-                        ? {
-                            backgroundColor:
-                              "color-mix(in srgb, var(--accent) 25%, var(--surface))",
-                          }
-                        : undefined
-                    }
-                    className="w-full min-w-0 bg-surface px-1.5 py-1 font-mono text-[11px] text-text focus:bg-bg focus:outline-1 focus:outline-accent"
-                  />
-                ))}
+                {spec.columns.map((_, ci) =>
+                  isFixityCheckboxCell(spec, ci) ? (
+                    <label
+                      key={ci}
+                      className="flex min-h-[28px] items-center justify-center bg-surface focus-within:bg-bg focus-within:outline-1 focus-within:outline-accent"
+                      onMouseDown={() => onCellDown(ri, ci)}
+                      onMouseEnter={(e) => onCellEnter(e, ri, ci)}
+                      style={cellStyle(ri, ci)}
+                    >
+                      <input
+                        type="checkbox"
+                        data-cell={`${ri}-${ci}`}
+                        checked={isTruthyCell(row[ci] ?? "")}
+                        aria-label={`${spec.columns[ci]} row ${ri + 1}`}
+                        onChange={(e) =>
+                          setCell(ri, ci, e.target.checked ? "1" : "0")
+                        }
+                        onPaste={(e) => onCellPaste(e, ri, ci)}
+                        onKeyDown={(e) => onCellKeyDown(e, ri, ci)}
+                        className="h-4 w-4 accent-[var(--accent)]"
+                      />
+                    </label>
+                  ) : (
+                    <input
+                      key={ci}
+                      data-cell={`${ri}-${ci}`}
+                      value={toDisplayCell(spec, ci, row[ci] ?? "")}
+                      spellCheck={false}
+                      onChange={(e) => setCell(ri, ci, e.target.value)}
+                      onPaste={(e) => onCellPaste(e, ri, ci)}
+                      onKeyDown={(e) => onCellKeyDown(e, ri, ci)}
+                      onMouseDown={() => onCellDown(ri, ci)}
+                      onMouseEnter={(e) => onCellEnter(e, ri, ci)}
+                      style={cellStyle(ri, ci)}
+                      className="w-full min-w-0 bg-surface px-1.5 py-1 font-mono text-[11px] text-text focus:bg-bg focus:outline-1 focus:outline-accent"
+                    />
+                  ),
+                )}
                 <button
                   type="button"
                   onClick={() => delRow(ri)}
@@ -349,4 +360,24 @@ function isNodeReferenceCell(spec: InputSpec, ci: number): boolean {
   )
     return ci === 0;
   return false;
+}
+
+function isFixityCheckboxCell(spec: InputSpec, ci: number): boolean {
+  return spec.key === "fixity" && ci >= 1 && ci <= 3;
+}
+
+function isTruthyCell(value: string): boolean {
+  const n = Number(value.trim());
+  return Number.isFinite(n) && n !== 0;
+}
+
+function focusCell(
+  grid: HTMLDivElement | null,
+  ri: number,
+  ci: number,
+): void {
+  const el = grid?.querySelector<HTMLInputElement>(`[data-cell="${ri}-${ci}"]`);
+  if (!el) return;
+  el.focus();
+  if (el.type !== "checkbox") el.select();
 }

@@ -176,13 +176,17 @@ const SPEC = {
           uniformSprings: {
             type: "array",
             description:
-              "Uniform transverse member-foundation stiffness along member local y.",
+              "Uniform transverse member-foundation stiffness along member local y, as force per transverse deflection per member length.",
             items: {
               type: "object",
               required: ["member", "k"],
               properties: {
                 member: { type: "integer" },
-                k: { type: "number", minimum: 0 },
+                k: {
+                  type: "number",
+                  minimum: 0,
+                  description: "Distributed stiffness, e.g. kip/in/ft.",
+                },
               },
             },
           },

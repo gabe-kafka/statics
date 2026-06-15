@@ -9,7 +9,11 @@ export type SolveRequest = {
   pointLoads?: { node: number; Fx: number; Fy: number; M?: number }[];
   distLoads?: { member: number; wi: number; wj: number }[];
   pointSprings?: { node: number; Kx: number; Ky: number; Km: number }[];
-  uniformSprings?: { member: number; k: number }[];
+  uniformSprings?: {
+    member: number;
+    /** Distributed transverse stiffness, e.g. kip/in/ft. */
+    k: number;
+  }[];
   hinges?: {
     /** Preferred explicit member index. */
     member?: number;

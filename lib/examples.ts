@@ -1,6 +1,7 @@
 import type { SolveRequest } from "@/lib/api/types";
 import type { Fields } from "@/lib/design-fields";
 import { fieldsFromDesign, parseFields } from "@/lib/design-fields";
+import { combineLoads, defaultCombinationId } from "@/lib/load-combinations";
 
 export type GalleryExample = {
   id: string;
@@ -116,8 +117,23 @@ export function solveRequestFromFields(
   A: number,
   include: SolveRequest["include"] = ["data", "svg"],
 ): SolveRequest {
-  const { nodes, members, fixity, pointLoads, distLoads, pointSprings, uniformSprings } =
-    parseFields(designFields);
+  const parsed = parseFields(designFields);
+  const {
+    nodes,
+    members,
+    fixity,
+    pointSprings,
+    uniformSprings,
+    loadCases,
+    loadCombinations,
+  } = parsed;
+  const combinedLoads = combineLoads({
+    pointLoads: parsed.pointLoads,
+    distLoads: parsed.distLoads,
+    loadCases,
+    loadCombinations,
+    combinationId: defaultCombinationId(loadCombinations),
+  });
 
   return {
     nodes: nodes.map((n) => [n[0], n[1]]),
@@ -128,10 +144,14 @@ export function solveRequestFromFields(
       Ry: !!ry,
       Rm: !!rm,
     })),
-    pointLoads: pointLoads
+    pointLoads: combinedLoads.pointLoads
       .filter(([, fx, fy, moment = 0]) => fx !== 0 || fy !== 0 || moment !== 0)
       .map(([node, Fx, Fy, M = 0]) => ({ node, Fx, Fy, M })),
-    distLoads: distLoads.map(([member, wi, wj]) => ({ member, wi, wj })),
+    distLoads: combinedLoads.distLoads.map(([member, wi, wj]) => ({
+      member,
+      wi,
+      wj,
+    })),
     pointSprings: pointSprings
       .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)
       .map(([node, Kx, Ky, Km]) => ({ node, Kx, Ky, Km })),
