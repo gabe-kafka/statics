@@ -221,6 +221,185 @@ function momentArrow(
   );
 }
 
+function linearSpringSvg(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  color: string,
+): string {
+  const horizontal = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
+  const dx = Math.sign(x2 - x1) || 1;
+  const dy = Math.sign(y2 - y1) || 1;
+  const parts = [
+    `<path d="${springPath(x1, y1, x2, y2)}" fill="none"/>`,
+  ];
+
+  if (horizontal) {
+    parts.push(
+      `<line x1="${x2}" y1="${y2}" x2="${x2 + dx * 6}" y2="${y2}"/>`,
+      `<line x1="${x2 + dx * 6}" y1="${y2 - 11}" x2="${x2 + dx * 6}" y2="${y2 + 11}"/>`,
+    );
+    for (let i = 0; i < 4; i++) {
+      parts.push(
+        `<line x1="${x2 + dx * 6}" y1="${y2 - 9 + i * 6}" x2="${x2 + dx * 11}" y2="${y2 - 13 + i * 6}"/>`,
+      );
+    }
+  } else {
+    parts.push(
+      `<line x1="${x2}" y1="${y2}" x2="${x2}" y2="${y2 + dy * 6}"/>`,
+      `<line x1="${x2 - 13}" y1="${y2 + dy * 6}" x2="${x2 + 13}" y2="${y2 + dy * 6}"/>`,
+    );
+    for (let i = 0; i < 5; i++) {
+      parts.push(
+        `<line x1="${x2 - 13 + i * 6.5}" y1="${y2 + dy * 6}" x2="${x2 - 17 + i * 6.5}" y2="${y2 + dy * 12}"/>`,
+      );
+    }
+  }
+
+  return `<g stroke="${color}" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${parts.join("")}</g>`;
+}
+
+function rotationalSpringSvg(cx: number, cy: number, color: string): string {
+  const springCy = cy - 22;
+  const parts = [
+    `<line x1="${cx}" y1="${cy - 4}" x2="${cx}" y2="${springCy + 12}"/>`,
+    `<path d="${spiralPath(cx, springCy, 3, 13, 1.85)}" fill="none"/>`,
+    `<line x1="${cx + 14}" y1="${springCy}" x2="${cx + 22}" y2="${springCy}"/>`,
+    `<line x1="${cx + 22}" y1="${springCy - 10}" x2="${cx + 22}" y2="${springCy + 10}"/>`,
+  ];
+  for (let i = 0; i < 4; i++) {
+    parts.push(
+      `<line x1="${cx + 22}" y1="${springCy - 8 + i * 5.5}" x2="${cx + 27}" y2="${springCy - 12 + i * 5.5}"/>`,
+    );
+  }
+  return `<g stroke="${color}" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${parts.join("")}</g>`;
+}
+
+function uniformSpringFoundationSvg(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  k: number,
+  color: string,
+): string {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return "";
+  const ux = dx / len;
+  const uy = dy / len;
+  let nx = -uy;
+  let ny = ux;
+  if (ny < -0.15) {
+    nx *= -1;
+    ny *= -1;
+  } else if (Math.abs(ny) <= 0.15) {
+    const dir = (x1 + x2) / 2 < W / 2 ? 1 : -1;
+    nx = dir;
+    ny = 0;
+  }
+
+  const springCount = Math.max(3, Math.min(10, Math.round(len / 70)));
+  const baseOffset = 34;
+  const baseX1 = x1 + ux * 8 + nx * baseOffset;
+  const baseY1 = y1 + uy * 8 + ny * baseOffset;
+  const baseX2 = x2 - ux * 8 + nx * baseOffset;
+  const baseY2 = y2 - uy * 8 + ny * baseOffset;
+  const hatchCount = Math.max(4, Math.min(18, Math.round(len / 34)));
+  const labelX = (x1 + x2) / 2 + nx * (baseOffset + 18);
+  const labelY = (y1 + y2) / 2 + ny * (baseOffset + 18);
+  const parts: string[] = [];
+
+  for (let i = 0; i < springCount; i++) {
+    const t = (i + 1) / (springCount + 1);
+    const sx = x1 + dx * t;
+    const sy = y1 + dy * t;
+    parts.push(
+      `<path d="${springPath(
+        sx + nx * 4,
+        sy + ny * 4,
+        sx + nx * (baseOffset - 2),
+        sy + ny * (baseOffset - 2),
+      )}" fill="none"/>`,
+    );
+  }
+  parts.push(
+    `<line x1="${baseX1}" y1="${baseY1}" x2="${baseX2}" y2="${baseY2}"/>`,
+  );
+  for (let i = 0; i < hatchCount; i++) {
+    const t = hatchCount === 1 ? 0.5 : i / (hatchCount - 1);
+    const hx = baseX1 + (baseX2 - baseX1) * t;
+    const hy = baseY1 + (baseY2 - baseY1) * t;
+    parts.push(
+      `<line x1="${hx}" y1="${hy}" x2="${hx - ux * 5 + nx * 6}" y2="${hy - uy * 5 + ny * 6}"/>`,
+    );
+  }
+  parts.push(
+    `<text x="${labelX}" y="${labelY}" fill="${color}" stroke="none" font-size="9" text-anchor="middle">k=${escapeText(fmt(k))}</text>`,
+  );
+
+  return `<g stroke="${color}" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">${parts.join("")}</g>`;
+}
+
+function springPath(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): string {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return "";
+  const ux = dx / len;
+  const uy = dy / len;
+  const nx = -uy;
+  const ny = ux;
+  const lead = Math.min(6, len / 4);
+  const sx = x1 + ux * lead;
+  const sy = y1 + uy * lead;
+  const ex = x2 - ux * lead;
+  const ey = y2 - uy * lead;
+  const segments = 10;
+  const amp = 4.5;
+  const parts = [`M ${fmtSvg(x1)} ${fmtSvg(y1)}`, `L ${fmtSvg(sx)} ${fmtSvg(sy)}`];
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    const offset = (i % 2 === 0 ? -1 : 1) * amp;
+    const px = sx + (ex - sx) * t + nx * offset;
+    const py = sy + (ey - sy) * t + ny * offset;
+    parts.push(`L ${fmtSvg(px)} ${fmtSvg(py)}`);
+  }
+  parts.push(`L ${fmtSvg(ex)} ${fmtSvg(ey)}`, `L ${fmtSvg(x2)} ${fmtSvg(y2)}`);
+  return parts.join(" ");
+}
+
+function spiralPath(
+  cx: number,
+  cy: number,
+  r0: number,
+  r1: number,
+  turns: number,
+): string {
+  const parts: string[] = [];
+  const steps = 44;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const r = r0 + (r1 - r0) * t;
+    const a = -Math.PI / 3 + t * turns * Math.PI * 2;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    parts.push(`${i === 0 ? "M" : "L"} ${fmtSvg(x)} ${fmtSvg(y)}`);
+  }
+  return parts.join(" ");
+}
+
+function fmtSvg(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
 function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
   const angle = (angleDeg * Math.PI) / 180;
   return {
@@ -337,6 +516,26 @@ function renderFbd(
     }
   }
 
+  // uniform spring foundations
+  for (const spring of req.uniformSprings ?? []) {
+    if (spring.k === 0) continue;
+    const member = req.members[spring.member];
+    if (!member) continue;
+    const a = req.nodes[member.i];
+    const b = req.nodes[member.j];
+    if (!a || !b) continue;
+    out.push(
+      uniformSpringFoundationSvg(
+        frame.X(a[0]),
+        frame.Y(a[1]),
+        frame.X(b[0]),
+        frame.Y(b[1]),
+        spring.k,
+        palette.support,
+      ),
+    );
+  }
+
   // beam
   for (const m of req.members) {
     const a = req.nodes[m.i];
@@ -344,6 +543,32 @@ function renderFbd(
     out.push(
       `<line x1="${frame.X(a[0])}" y1="${frame.Y(a[1])}" x2="${frame.X(b[0])}" y2="${frame.Y(b[1])}" stroke="${palette.beam}" stroke-width="2.5" stroke-linecap="round"/>`,
     );
+  }
+
+  // point springs
+  for (const spring of req.pointSprings ?? []) {
+    if (!req.nodes[spring.node]) continue;
+    if (spring.Kx === 0 && spring.Ky === 0 && spring.Km === 0) continue;
+    const cx = frame.X(req.nodes[spring.node][0]);
+    const cy = frame.Y(req.nodes[spring.node][1]);
+    if (spring.Kx !== 0) {
+      const dir = cx < W / 2 ? 1 : -1;
+      out.push(
+        linearSpringSvg(
+          cx + dir * 4,
+          cy,
+          cx + dir * 34,
+          cy,
+          palette.support,
+        ),
+      );
+    }
+    if (spring.Ky !== 0) {
+      out.push(linearSpringSvg(cx, cy + 4, cx, cy + 34, palette.support));
+    }
+    if (spring.Km !== 0) {
+      out.push(rotationalSpringSvg(cx, cy, palette.support));
+    }
   }
 
   // supports

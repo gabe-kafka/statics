@@ -519,6 +519,71 @@ export function Diagrams({
     }
   });
 
+  const pointSpringEls: React.ReactElement[] = [];
+  pointSprings.forEach(([n, kx, ky, km], k) => {
+    if (!nodes[n]) return;
+    if (kx === 0 && ky === 0 && km === 0) return;
+    const cx = frame.X(nodes[n][0]);
+    const cy = frame.Y(nodes[n][1]);
+    if (kx !== 0) {
+      const dir = cx < W / 2 ? 1 : -1;
+      pointSpringEls.push(
+        <LinearSpring
+          key={`ps-${k}-kx`}
+          x1={cx + dir * 4}
+          y1={cy}
+          x2={cx + dir * 34}
+          y2={cy}
+          color={PALETTE.support}
+        />,
+      );
+    }
+    if (ky !== 0) {
+      pointSpringEls.push(
+        <LinearSpring
+          key={`ps-${k}-ky`}
+          x1={cx}
+          y1={cy + 4}
+          x2={cx}
+          y2={cy + 34}
+          color={PALETTE.support}
+        />,
+      );
+    }
+    if (km !== 0) {
+      pointSpringEls.push(
+        <RotationalSpring
+          key={`ps-${k}-km`}
+          cx={cx}
+          cy={cy}
+          color={PALETTE.support}
+        />,
+      );
+    }
+  });
+
+  const uniformSpringEls: React.ReactElement[] = [];
+  uniformSprings.forEach(([mIdx, k], springIdx) => {
+    if (k === 0) return;
+    const member = members[mIdx];
+    if (!member) return;
+    const a = nodes[member[0]];
+    const b = nodes[member[1]];
+    if (!a || !b) return;
+    uniformSpringEls.push(
+      <UniformSpringFoundation
+        key={`us-${springIdx}`}
+        x1={frame.X(a[0])}
+        y1={frame.Y(a[1])}
+        x2={frame.X(b[0])}
+        y2={frame.Y(b[1])}
+        midX={W / 2}
+        k={k}
+        color={PALETTE.support}
+      />,
+    );
+  });
+
   const reactionEls: React.ReactElement[] = [];
   const Rmax = Math.max(
     1,
@@ -666,6 +731,7 @@ export function Diagrams({
       >
         <g>
           {fbdLoads}
+          {uniformSpringEls}
           {members.map(([i, j], idx) => {
             if (!nodes[i] || !nodes[j]) return null;
             return (
@@ -682,6 +748,7 @@ export function Diagrams({
             );
           })}
           {supports}
+          {pointSpringEls}
           {reactionEls}
           <SectionLabel
             x={W - PAD}
@@ -1250,6 +1317,255 @@ function MomentArrow({
       <polygon points={`${end.x},${end.y} ${hx1},${hy1} ${hx2},${hy2}`} />
     </g>
   );
+}
+
+function LinearSpring({
+  x1,
+  y1,
+  x2,
+  y2,
+  color,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+}) {
+  const horizontal = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
+  const dx = Math.sign(x2 - x1) || 1;
+  const dy = Math.sign(y2 - y1) || 1;
+
+  return (
+    <g
+      stroke={color}
+      fill="none"
+      strokeWidth={1.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={springPath(x1, y1, x2, y2)} />
+      {horizontal ? (
+        <>
+          <line x1={x2} y1={y2} x2={x2 + dx * 6} y2={y2} />
+          <line x1={x2 + dx * 6} y1={y2 - 11} x2={x2 + dx * 6} y2={y2 + 11} />
+          {Array.from({ length: 4 }, (_, i) => (
+            <line
+              key={i}
+              x1={x2 + dx * 6}
+              y1={y2 - 9 + i * 6}
+              x2={x2 + dx * 11}
+              y2={y2 - 13 + i * 6}
+            />
+          ))}
+        </>
+      ) : (
+        <>
+          <line x1={x2} y1={y2} x2={x2} y2={y2 + dy * 6} />
+          <line x1={x2 - 13} y1={y2 + dy * 6} x2={x2 + 13} y2={y2 + dy * 6} />
+          {Array.from({ length: 5 }, (_, i) => (
+            <line
+              key={i}
+              x1={x2 - 13 + i * 6.5}
+              y1={y2 + dy * 6}
+              x2={x2 - 17 + i * 6.5}
+              y2={y2 + dy * 12}
+            />
+          ))}
+        </>
+      )}
+    </g>
+  );
+}
+
+function RotationalSpring({
+  cx,
+  cy,
+  color,
+}: {
+  cx: number;
+  cy: number;
+  color: string;
+}) {
+  const springCy = cy - 22;
+  return (
+    <g
+      stroke={color}
+      fill="none"
+      strokeWidth={1.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1={cx} y1={cy - 4} x2={cx} y2={springCy + 12} />
+      <path d={spiralPath(cx, springCy, 3, 13, 1.85)} />
+      <line x1={cx + 14} y1={springCy} x2={cx + 22} y2={springCy} />
+      <line x1={cx + 22} y1={springCy - 10} x2={cx + 22} y2={springCy + 10} />
+      {Array.from({ length: 4 }, (_, i) => (
+        <line
+          key={i}
+          x1={cx + 22}
+          y1={springCy - 8 + i * 5.5}
+          x2={cx + 27}
+          y2={springCy - 12 + i * 5.5}
+        />
+      ))}
+    </g>
+  );
+}
+
+function UniformSpringFoundation({
+  x1,
+  y1,
+  x2,
+  y2,
+  midX,
+  k,
+  color,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  midX: number;
+  k: number;
+  color: string;
+}) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return null;
+  const ux = dx / len;
+  const uy = dy / len;
+  let nx = -uy;
+  let ny = ux;
+  if (ny < -0.15) {
+    nx *= -1;
+    ny *= -1;
+  } else if (Math.abs(ny) <= 0.15) {
+    const dir = (x1 + x2) / 2 < midX ? 1 : -1;
+    nx = dir;
+    ny = 0;
+  }
+
+  const springCount = Math.max(3, Math.min(10, Math.round(len / 70)));
+  const baseOffset = 34;
+  const baseX1 = x1 + ux * 8 + nx * baseOffset;
+  const baseY1 = y1 + uy * 8 + ny * baseOffset;
+  const baseX2 = x2 - ux * 8 + nx * baseOffset;
+  const baseY2 = y2 - uy * 8 + ny * baseOffset;
+  const hatchCount = Math.max(4, Math.min(18, Math.round(len / 34)));
+  const labelX = (x1 + x2) / 2 + nx * (baseOffset + 18);
+  const labelY = (y1 + y2) / 2 + ny * (baseOffset + 18);
+
+  return (
+    <g
+      stroke={color}
+      fill="none"
+      strokeWidth={1.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {Array.from({ length: springCount }, (_, i) => {
+        const t = (i + 1) / (springCount + 1);
+        const sx = x1 + dx * t;
+        const sy = y1 + dy * t;
+        return (
+          <path
+            key={`spring-${i}`}
+            d={springPath(
+              sx + nx * 4,
+              sy + ny * 4,
+              sx + nx * (baseOffset - 2),
+              sy + ny * (baseOffset - 2),
+            )}
+          />
+        );
+      })}
+      <line x1={baseX1} y1={baseY1} x2={baseX2} y2={baseY2} />
+      {Array.from({ length: hatchCount }, (_, i) => {
+        const t = hatchCount === 1 ? 0.5 : i / (hatchCount - 1);
+        const hx = baseX1 + (baseX2 - baseX1) * t;
+        const hy = baseY1 + (baseY2 - baseY1) * t;
+        return (
+          <line
+            key={`hatch-${i}`}
+            x1={hx}
+            y1={hy}
+            x2={hx - ux * 5 + nx * 6}
+            y2={hy - uy * 5 + ny * 6}
+          />
+        );
+      })}
+      <text
+        x={labelX}
+        y={labelY}
+        fill={color}
+        stroke="none"
+        fontSize={9}
+        textAnchor="middle"
+        fontFamily="var(--font-mono)"
+      >
+        k={fmt(k)}
+      </text>
+    </g>
+  );
+}
+
+function springPath(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): string {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return "";
+  const ux = dx / len;
+  const uy = dy / len;
+  const nx = -uy;
+  const ny = ux;
+  const lead = Math.min(6, len / 4);
+  const sx = x1 + ux * lead;
+  const sy = y1 + uy * lead;
+  const ex = x2 - ux * lead;
+  const ey = y2 - uy * lead;
+  const segments = 10;
+  const amp = 4.5;
+  const parts = [`M ${fmtSvg(x1)} ${fmtSvg(y1)}`, `L ${fmtSvg(sx)} ${fmtSvg(sy)}`];
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    const offset = (i % 2 === 0 ? -1 : 1) * amp;
+    const px = sx + (ex - sx) * t + nx * offset;
+    const py = sy + (ey - sy) * t + ny * offset;
+    parts.push(`L ${fmtSvg(px)} ${fmtSvg(py)}`);
+  }
+  parts.push(`L ${fmtSvg(ex)} ${fmtSvg(ey)}`, `L ${fmtSvg(x2)} ${fmtSvg(y2)}`);
+  return parts.join(" ");
+}
+
+function spiralPath(
+  cx: number,
+  cy: number,
+  r0: number,
+  r1: number,
+  turns: number,
+): string {
+  const parts: string[] = [];
+  const steps = 44;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const r = r0 + (r1 - r0) * t;
+    const a = -Math.PI / 3 + t * turns * Math.PI * 2;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    parts.push(`${i === 0 ? "M" : "L"} ${fmtSvg(x)} ${fmtSvg(y)}`);
+  }
+  return parts.join(" ");
+}
+
+function fmtSvg(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
 function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
