@@ -36,6 +36,24 @@ export type DistLoadRow = [
   loadCase: string,
 ];
 
+const DEFAULT_LOAD_CASE_ROWS = [
+  ["D", "Dead"],
+  ["L", "Live"],
+];
+
+const DEFAULT_LOAD_COMBINATION_ROWS = [
+  ["SERVICE", "D", "1"],
+  ["SERVICE", "L", "1"],
+  ["1.4D", "D", "1.4"],
+  ["1.2D+1.6L", "D", "1.2"],
+  ["1.2D+1.6L", "L", "1.6"],
+  ["1.2D+1.0L", "D", "1.2"],
+  ["1.2D+1.0L", "L", "1"],
+  ["0.9D", "D", "0.9"],
+  ["0.9D+1.0L", "D", "0.9"],
+  ["0.9D+1.0L", "L", "1"],
+];
+
 export type ParsedDesignFields = {
   nodes: Vec2[];
   members: [number, number][];
@@ -85,8 +103,8 @@ export const INPUTS: readonly InputSpec[] = [
 export const DEFAULT_FIELDS: Fields = {
   nodes: "(0, 0)\n(15, 0)\n(31, 0)",
   members: "(0, 1)\n(1, 2)",
-  loadCases: "(D, Dead)",
-  loadCombinations: "(SERVICE, D, 1)",
+  loadCases: serializeRows(DEFAULT_LOAD_CASE_ROWS),
+  loadCombinations: serializeRows(DEFAULT_LOAD_COMBINATION_ROWS),
   pointLoads: "(1, 0, -10, 0, D)",
   distLoads: "(0, -2.98, -2.98, D)\n(1, -3.50, -5.64, D)",
   fixity: "(0, 1, 1, 0)\n(2, 0, 1, 0)",
@@ -111,6 +129,24 @@ export function parseRows(s: string): string[][] {
 
 export function serializeRows(rows: string[][]): string {
   return rows.map((r) => `(${r.join(", ")})`).join("\n");
+}
+
+export function defaultRowForInput(spec: InputSpec, rowIndex: number): string[] {
+  if (spec.key === "loadCases") {
+    return DEFAULT_LOAD_CASE_ROWS[rowIndex] ?? [`CASE ${rowIndex + 1}`, ""];
+  }
+  if (spec.key === "loadCombinations") {
+    return (
+      DEFAULT_LOAD_COMBINATION_ROWS[rowIndex] ?? [
+        `COMBO ${rowIndex + 1}`,
+        rowIndex % 2 === 0 ? "D" : "L",
+        "1",
+      ]
+    );
+  }
+  if (spec.key === "pointLoads") return ["0", "0", "0", "0", "D"];
+  if (spec.key === "distLoads") return ["0", "0", "0", "D"];
+  return spec.columns.map(() => "0");
 }
 
 export function rowsToTSV(rows: string[][]): string {

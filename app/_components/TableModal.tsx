@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { InputSpec } from "@/lib/design-fields";
 import {
+  defaultRowForInput,
   parseRows,
   rowsToTSV,
   serializeRows,
@@ -12,11 +13,13 @@ import {
 export function TableModal({
   spec,
   value,
+  loadCaseOptions = [],
   onChange,
   onClose,
 }: {
   spec: InputSpec;
   value: string;
+  loadCaseOptions?: string[];
   onChange: (v: string) => void;
   onClose: () => void;
 }) {
@@ -98,8 +101,15 @@ export function TableModal({
     onChange(serializeRows(next));
   };
 
+  const addRows = (count: number) => {
+    const newRows = Array.from({ length: count }, (_, i) =>
+      defaultRowForModal(spec, rows.length + i, loadCaseOptions),
+    );
+    onChange(serializeRows([...rows, ...newRows]));
+  };
+
   const addRow = () => {
-    onChange(serializeRows([...rows, spec.columns.map(() => "0")]));
+    addRows(1);
   };
 
   const delRow = (ri: number) => {
@@ -133,7 +143,7 @@ export function TableModal({
   };
 
   const onCellKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>,
+    e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement>,
     ri: number,
     ci: number,
   ) => {
@@ -198,7 +208,10 @@ export function TableModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[85vh] w-[min(560px,95vw)] flex-col border border-border bg-bg shadow-xl">
+      <div
+        className="flex max-h-[85vh] flex-col border border-border bg-bg shadow-xl"
+        style={{ width: modalWidth(spec) }}
+      >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-text">
             {spec.label}
@@ -223,7 +236,7 @@ export function TableModal({
             ref={gridRef}
             className="grid gap-px bg-border select-none"
             style={{
-              gridTemplateColumns: `repeat(${cols}, minmax(60px, 1fr)) 20px`,
+              gridTemplateColumns: gridTemplateColumns(spec),
             }}
           >
             {spec.columns.map((c) => (
@@ -238,7 +251,28 @@ export function TableModal({
             {rows.map((row, ri) => (
               <Fragment key={ri}>
                 {spec.columns.map((_, ci) =>
-                  isFixityCheckboxCell(spec, ci) ? (
+                  isLoadCombinationCaseCell(spec, ci) ? (
+                    <select
+                      key={ci}
+                      data-cell={`${ri}-${ci}`}
+                      value={row[ci] ?? ""}
+                      aria-label={`${spec.columns[ci]} row ${ri + 1}`}
+                      onChange={(e) => setCell(ri, ci, e.target.value)}
+                      onKeyDown={(e) => onCellKeyDown(e, ri, ci)}
+                      onMouseDown={() => onCellDown(ri, ci)}
+                      onMouseEnter={(e) => onCellEnter(e, ri, ci)}
+                      style={cellStyle(ri, ci)}
+                      className="w-full min-w-0 bg-surface px-1 py-1 font-mono text-[11px] text-text focus:bg-bg focus:outline-1 focus:outline-accent"
+                    >
+                      {caseOptionsForCell(loadCaseOptions, row[ci] ?? "").map(
+                        (option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  ) : isFixityCheckboxCell(spec, ci) ? (
                     <label
                       key={ci}
                       className="flex min-h-[28px] items-center justify-center bg-surface focus-within:bg-bg focus-within:outline-1 focus-within:outline-accent"
@@ -300,6 +334,15 @@ export function TableModal({
             >
               + ROW
             </button>
+            {spec.key === "loadCombinations" && (
+              <button
+                type="button"
+                onClick={() => addRows(5)}
+                className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:border-accent hover:text-text"
+              >
+                +5 ROWS
+              </button>
+            )}
             <button
               type="button"
               onClick={copyTable}
@@ -366,9 +409,40 @@ function isFixityCheckboxCell(spec: InputSpec, ci: number): boolean {
   return spec.key === "fixity" && ci >= 1 && ci <= 3;
 }
 
+function isLoadCombinationCaseCell(spec: InputSpec, ci: number): boolean {
+  return spec.key === "loadCombinations" && ci === 1;
+}
+
 function isTruthyCell(value: string): boolean {
   const n = Number(value.trim());
   return Number.isFinite(n) && n !== 0;
+}
+
+function caseOptionsForCell(options: string[], value: string): string[] {
+  const cleaned: string[] = [];
+  for (const option of options) {
+    const trimmed = option.trim();
+    if (trimmed && !cleaned.includes(trimmed)) cleaned.push(trimmed);
+  }
+  const current = value.trim();
+  if (!current) return ["", ...(cleaned.length > 0 ? cleaned : ["D", "L"])];
+  if (current && !cleaned.some((option) => option === current)) {
+    cleaned.unshift(current);
+  }
+  return cleaned.length > 0 ? cleaned : ["D", "L"];
+}
+
+function defaultRowForModal(
+  spec: InputSpec,
+  rowIndex: number,
+  loadCaseOptions: string[],
+): string[] {
+  const row = defaultRowForInput(spec, rowIndex);
+  if (spec.key !== "loadCombinations") return row;
+
+  const cases = caseOptionsForCell(loadCaseOptions, "").filter(Boolean);
+  if (cases.length === 0 || cases.includes(row[1])) return row;
+  return [row[0], cases[rowIndex % cases.length], row[2]];
 }
 
 function focusCell(
@@ -376,8 +450,22 @@ function focusCell(
   ri: number,
   ci: number,
 ): void {
-  const el = grid?.querySelector<HTMLInputElement>(`[data-cell="${ri}-${ci}"]`);
+  const el = grid?.querySelector<HTMLInputElement | HTMLSelectElement>(
+    `[data-cell="${ri}-${ci}"]`,
+  );
   if (!el) return;
   el.focus();
-  if (el.type !== "checkbox") el.select();
+  if (el instanceof HTMLInputElement && el.type !== "checkbox") el.select();
+}
+
+function modalWidth(spec: InputSpec): string {
+  if (spec.key === "loadCombinations") return "min(620px, 95vw)";
+  return "min(560px, 95vw)";
+}
+
+function gridTemplateColumns(spec: InputSpec): string {
+  if (spec.key === "loadCombinations") {
+    return "minmax(220px, 1fr) minmax(48px, 56px) minmax(54px, 64px) 20px";
+  }
+  return `repeat(${spec.columns.length}, minmax(60px, 1fr)) 20px`;
 }

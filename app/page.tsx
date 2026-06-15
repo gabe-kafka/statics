@@ -45,6 +45,12 @@ export default function Home() {
     uniformSprings,
     hinges,
   } = useMemo(() => parseFields(fields), [fields]);
+  const loadCaseOptions = useMemo(() => {
+    const ids = parseRows(fields.loadCases)
+      .map((row) => row[0]?.trim())
+      .filter((id): id is string => !!id);
+    return ids.length > 0 ? ids : ["D", "L"];
+  }, [fields.loadCases]);
 
   const fieldsRef = useRef(fields);
   const historyRef = useRef<{ past: Fields[]; future: Fields[] }>({
@@ -273,6 +279,7 @@ export default function Home() {
         <TableModal
           spec={INPUTS.find((i) => i.key === openKey)!}
           value={fields[openKey]}
+          loadCaseOptions={loadCaseOptions}
           onChange={(v) => setFields((f) => ({ ...f, [openKey]: v }))}
           onClose={() => setOpenKey(null)}
         />
