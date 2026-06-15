@@ -761,6 +761,7 @@ export function Diagrams({
         )
       : null;
   const peaks = state.kind === "ok" ? state.data.peaks : null;
+  const hasUniformSpringReactions = uniformSprings.some(([, k]) => k !== 0);
 
   return (
     <div
@@ -773,6 +774,7 @@ export function Diagrams({
           equilibrium={equilibrium}
           peaks={peaks}
           reactions={pointReactions}
+          hasUniformSpringReactions={hasUniformSpringReactions}
         />
       )}
       <svg
@@ -1042,10 +1044,12 @@ function CorrectnessPanel({
   equilibrium,
   peaks,
   reactions,
+  hasUniformSpringReactions,
 }: {
   equilibrium: Equilibrium | null;
   peaks: SolveResponse["peaks"] | null;
   reactions: ReactionOut[];
+  hasUniformSpringReactions: boolean;
 }) {
   return (
     <div
@@ -1079,7 +1083,9 @@ function CorrectnessPanel({
 
       <PanelGroup title="REACTIONS">
         {reactions.length === 0 ? (
-          <span style={{ color: PALETTE.dim }}>none</span>
+          <span style={{ color: PALETTE.dim }}>
+            {hasUniformSpringReactions ? "see spring foundation" : "none"}
+          </span>
         ) : (
           reactions.map((r) => (
             <span key={r.node} className="whitespace-nowrap">
