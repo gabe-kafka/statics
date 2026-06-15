@@ -41,6 +41,7 @@ type Props = {
   pointLoads: PointLoad[];
   distLoads: DistLoad[];
   fixity: Fixity[];
+  hinges: [number, "i" | "j"][];
   E: number;
   I: number;
   A: number;
@@ -62,6 +63,7 @@ export function Diagrams({
   pointLoads,
   distLoads,
   fixity,
+  hinges,
   E,
   I,
   A,
@@ -85,11 +87,14 @@ export function Diagrams({
         .filter(([, fx, fy]) => fx !== 0 || fy !== 0)
         .map(([node, Fx, Fy]) => ({ node, Fx, Fy })),
       distLoads: distLoads.map(([member, wi, wj]) => ({ member, wi, wj })),
+      hinges: hinges.map(([member, end]) => ({ member, end })),
       samplesPerMember: SAMPLES_PER_MEMBER,
       include: ["data"],
     };
 
     if (req.nodes.length === 0 || req.members.length === 0) {
+      // Keeps stale solver output hidden when the current model is empty.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({ kind: "idle" });
       return;
     }
@@ -123,7 +128,7 @@ export function Diagrams({
       ctl.abort();
       clearTimeout(timer);
     };
-  }, [nodes, members, pointLoads, distLoads, fixity, E, I, A]);
+  }, [nodes, members, pointLoads, distLoads, fixity, hinges, E, I, A]);
 
   const W = 880;
   const PAD = 48;
@@ -135,26 +140,34 @@ export function Diagrams({
   const H_D = 130;
   const GAP = 18;
 
-  const xs = nodes.map((n) => n[0]);
-  const xmin = xs.length ? Math.min(...xs) : 0;
-  const xmax = xs.length ? Math.max(...xs) : 1;
-  const xspan = Math.max(xmax - xmin, 1);
-  const X = (x: number) => PAD + ((x - xmin) / xspan) * (W - 2 * PAD);
+  const stationEnds =
+    state.kind === "ok"
+      ? state.data.members.reduce<number[]>((acc, member) => {
+          acc.push((acc[acc.length - 1] ?? 0) + member.L);
+          return acc;
+        }, [])
+      : [];
+  const totalStation = Math.max(stationEnds[stationEnds.length - 1] ?? 1, 1);
+  const X = (s: number) => PAD + (s / totalStation) * (W - 2 * PAD);
+  const frame = projectFrame(nodes, W, H_FBD, 28);
 
-  type Sample = { x: number; v: number; m: number; t: number; d: number };
+  type Sample = { station: number; x: number; y: number; v: number; m: number; t: number; d: number };
   const samples: Sample[] = [];
   const reactions: ReactionOut[] =
     state.kind === "ok" ? state.data.reactions : [];
   if (state.kind === "ok") {
     state.data.members.forEach((mr, idx) => {
-      const [i, j] = members[idx] ?? [0, 0];
-      if (!nodes[i] || !nodes[j]) return;
-      const xi = nodes[i][0];
-      const xj = nodes[j][0];
+      const station0 = idx === 0 ? 0 : stationEnds[idx - 1];
       mr.samples.forEach((s: SampleOut) => {
-        const t = mr.L > 0 ? s.s / mr.L : 0;
-        const x = xi + (xj - xi) * t;
-        samples.push({ x, v: s.V, m: s.M, t: s.theta, d: s.delta });
+        samples.push({
+          station: station0 + s.s,
+          x: s.x,
+          y: s.y,
+          v: s.V,
+          m: s.M,
+          t: s.theta,
+          d: s.delta,
+        });
       });
     });
   }
@@ -166,8 +179,6 @@ export function Diagrams({
 
   // Layout offsets — TOP svg (FBD + V + M)
   const H_TOP = H_FBD + GAP + H_V + GAP + H_M;
-  const yFbd0 = 0;
-  const yFbdBeam = yFbd0 + H_FBD * 0.55;
   const yV0 = H_FBD + GAP;
   const yVAxis = yV0 + H_V / 2;
   const yM0 = H_FBD + GAP + H_V + GAP;
@@ -190,14 +201,16 @@ export function Diagrams({
     const a = nodes[m[0]];
     const b = nodes[m[1]];
     if (!a || !b) return;
-    const xa = X(a[0]);
-    const xb = X(b[0]);
+    const xa = frame.X(a[0]);
+    const xb = frame.X(b[0]);
+    const yaBeam = frame.Y(a[1]);
+    const ybBeam = frame.Y(b[1]);
     const wMax = Math.max(Math.abs(wi), Math.abs(wj), 1e-6);
     const SCALE = Math.min(55, 30 * (1 + wMax / 6));
     const ha = (Math.abs(wi) / wMax) * SCALE;
     const hb = (Math.abs(wj) / wMax) * SCALE;
-    const y_a = yFbdBeam - ha - 2;
-    const y_b = yFbdBeam - hb - 2;
+    const y_a = yaBeam - ha - 2;
+    const y_b = ybBeam - hb - 2;
 
     fbdLoads.push(
       <line
@@ -216,7 +229,7 @@ export function Diagrams({
         x1={xa}
         y1={y_a}
         x2={xa}
-        y2={yFbdBeam - 2}
+        y2={yaBeam - 2}
         stroke={PALETTE.load}
         strokeWidth={1.2}
       />,
@@ -227,7 +240,7 @@ export function Diagrams({
         x1={xb}
         y1={y_b}
         x2={xb}
-        y2={yFbdBeam - 2}
+        y2={ybBeam - 2}
         stroke={PALETTE.load}
         strokeWidth={1.2}
       />,
@@ -243,7 +256,7 @@ export function Diagrams({
           x1={xi}
           y1={yi_top}
           x2={xi}
-          y2={yFbdBeam - 3}
+          y2={yaBeam + t * (ybBeam - yaBeam) - 3}
           color={PALETTE.load}
           head={4}
         />,
@@ -271,8 +284,8 @@ export function Diagrams({
   pointLoads.forEach(([n, fx, fy], k) => {
     if (!nodes[n]) return;
     if (fx === 0 && fy === 0) return;
-    const cx = X(nodes[n][0]);
-    const cy = yFbdBeam;
+    const cx = frame.X(nodes[n][0]);
+    const cy = frame.Y(nodes[n][1]);
     const L = 40;
     if (fy !== 0) {
       const down = fy < 0;
@@ -323,8 +336,8 @@ export function Diagrams({
   const supports: React.ReactElement[] = [];
   fixity.forEach(([n, rx, ry, rm], k) => {
     if (!nodes[n]) return;
-    const cx = X(nodes[n][0]);
-    const cy = yFbdBeam;
+    const cx = frame.X(nodes[n][0]);
+    const cy = frame.Y(nodes[n][1]);
     if (rx && ry && rm) {
       supports.push(
         <g key={`fx-${k}`} stroke={PALETTE.support} fill={PALETTE.support}>
@@ -411,8 +424,8 @@ export function Diagrams({
   );
   reactions.forEach((r, k) => {
     if (!nodes[r.node]) return;
-    const cx = X(nodes[r.node][0]);
-    const cy = yFbdBeam + 30;
+    const cx = frame.X(nodes[r.node][0]);
+    const cy = frame.Y(nodes[r.node][1]) + 30;
     const L = (Math.abs(r.Ry) / Rmax) * 36 + 4;
     if (Math.abs(r.Ry) > 1e-3) {
       reactionEls.push(
@@ -445,79 +458,79 @@ export function Diagrams({
   // ─── V and M paths ─────────────────────────────────────────────────
   const vPath = samples
     .map((s, i) => {
-      const x = X(s.x);
+      const x = X(s.station);
       const y = yVAxis - (s.v / vmax) * (H_V / 2 - 12);
       return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(" ");
 
   const vFill = samples.length
-    ? `M ${X(samples[0].x).toFixed(1)} ${yVAxis} ${samples
-        .map((s) => `L ${X(s.x).toFixed(1)} ${(yVAxis - (s.v / vmax) * (H_V / 2 - 12)).toFixed(1)}`)
-        .join(" ")} L ${X(samples[samples.length - 1].x).toFixed(1)} ${yVAxis} Z`
+    ? `M ${X(samples[0].station).toFixed(1)} ${yVAxis} ${samples
+        .map((s) => `L ${X(s.station).toFixed(1)} ${(yVAxis - (s.v / vmax) * (H_V / 2 - 12)).toFixed(1)}`)
+        .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yVAxis} Z`
     : "";
 
   const mPath = samples
     .map((s, i) => {
-      const x = X(s.x);
-      const y = yMAxis + (s.m / mmax) * (H_M / 2 - 12);
+      const x = X(s.station);
+      const y = yMAxis - (s.m / mmax) * (H_M / 2 - 12);
       return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(" ");
   const mFill = samples.length
-    ? `M ${X(samples[0].x).toFixed(1)} ${yMAxis} ${samples
-        .map((s) => `L ${X(s.x).toFixed(1)} ${(yMAxis + (s.m / mmax) * (H_M / 2 - 12)).toFixed(1)}`)
-        .join(" ")} L ${X(samples[samples.length - 1].x).toFixed(1)} ${yMAxis} Z`
+    ? `M ${X(samples[0].station).toFixed(1)} ${yMAxis} ${samples
+        .map((s) => `L ${X(s.station).toFixed(1)} ${(yMAxis - (s.m / mmax) * (H_M / 2 - 12)).toFixed(1)}`)
+        .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yMAxis} Z`
     : "";
 
   const vMaxSample = samples.reduce(
     (a, b) => (Math.abs(b.v) > Math.abs(a.v) ? b : a),
-    samples[0] ?? { x: 0, v: 0, m: 0, t: 0, d: 0 },
+    samples[0] ?? { station: 0, x: 0, y: 0, v: 0, m: 0, t: 0, d: 0 },
   );
   const mMaxSample = samples.reduce(
     (a, b) => (Math.abs(b.m) > Math.abs(a.m) ? b : a),
-    samples[0] ?? { x: 0, v: 0, m: 0, t: 0, d: 0 },
+    samples[0] ?? { station: 0, x: 0, y: 0, v: 0, m: 0, t: 0, d: 0 },
   );
 
   const tPath = samples
     .map((s, i) => {
-      const x = X(s.x);
+      const x = X(s.station);
       const y = yTAxis - (s.t / tmax) * (H_T / 2 - 12);
       return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(" ");
   const tFill = samples.length
-    ? `M ${X(samples[0].x).toFixed(1)} ${yTAxis} ${samples
+    ? `M ${X(samples[0].station).toFixed(1)} ${yTAxis} ${samples
         .map(
           (s) =>
-            `L ${X(s.x).toFixed(1)} ${(yTAxis - (s.t / tmax) * (H_T / 2 - 12)).toFixed(1)}`,
+            `L ${X(s.station).toFixed(1)} ${(yTAxis - (s.t / tmax) * (H_T / 2 - 12)).toFixed(1)}`,
         )
-        .join(" ")} L ${X(samples[samples.length - 1].x).toFixed(1)} ${yTAxis} Z`
+        .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yTAxis} Z`
     : "";
 
   const dPath = samples
     .map((s, i) => {
-      const x = X(s.x);
+      const x = X(s.station);
       const y = yDAxis - (s.d / dmax) * (H_D / 2 - 12);
       return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(" ");
   const dFill = samples.length
-    ? `M ${X(samples[0].x).toFixed(1)} ${yDAxis} ${samples
+    ? `M ${X(samples[0].station).toFixed(1)} ${yDAxis} ${samples
         .map(
           (s) =>
-            `L ${X(s.x).toFixed(1)} ${(yDAxis - (s.d / dmax) * (H_D / 2 - 12)).toFixed(1)}`,
+            `L ${X(s.station).toFixed(1)} ${(yDAxis - (s.d / dmax) * (H_D / 2 - 12)).toFixed(1)}`,
         )
-        .join(" ")} L ${X(samples[samples.length - 1].x).toFixed(1)} ${yDAxis} Z`
+        .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yDAxis} Z`
     : "";
 
   const tMaxSample = samples.reduce(
     (a, b) => (Math.abs(b.t) > Math.abs(a.t) ? b : a),
-    samples[0] ?? { x: 0, v: 0, m: 0, t: 0, d: 0 },
+    samples[0] ?? { station: 0, x: 0, y: 0, v: 0, m: 0, t: 0, d: 0 },
   );
   const dMaxSample = samples.reduce(
     (a, b) => (Math.abs(b.d) > Math.abs(a.d) ? b : a),
-    samples[0] ?? { x: 0, v: 0, m: 0, t: 0, d: 0 },
+    samples[0] ?? { station: 0, x: 0, y: 0, v: 0, m: 0, t: 0, d: 0 },
   );
   const equilibrium =
     state.kind === "ok"
@@ -550,10 +563,10 @@ export function Diagrams({
             return (
               <line
                 key={idx}
-                x1={X(nodes[i][0])}
-                y1={yFbdBeam}
-                x2={X(nodes[j][0])}
-                y2={yFbdBeam}
+                x1={frame.X(nodes[i][0])}
+                y1={frame.Y(nodes[i][1])}
+                x2={frame.X(nodes[j][0])}
+                y2={frame.Y(nodes[j][1])}
                 stroke={PALETTE.beam}
                 strokeWidth={2.5}
                 strokeLinecap="round"
@@ -564,7 +577,7 @@ export function Diagrams({
           {reactionEls}
           <SectionLabel
             x={W - PAD}
-            y={yFbdBeam - H_FBD / 2 + 10}
+            y={16}
             text="FBD"
           />
         </g>
@@ -587,12 +600,12 @@ export function Diagrams({
           <SectionLabel
             x={W - PAD}
             y={yV0 + 12}
-            text="V(x)"
+            text="V(s)"
             color={PALETTE.shear}
           />
           {samples.length > 0 && (
             <text
-              x={X(vMaxSample.x)}
+              x={X(vMaxSample.station)}
               y={yVAxis - (vMaxSample.v / vmax) * (H_V / 2 - 12) - 4}
               fontSize={9}
               fill={PALETTE.shear}
@@ -622,13 +635,13 @@ export function Diagrams({
           <SectionLabel
             x={W - PAD}
             y={yM0 + 12}
-            text="M(x)"
+            text="M(s)"
             color={PALETTE.moment}
           />
           {samples.length > 0 && (
             <text
-              x={X(mMaxSample.x)}
-              y={yMAxis + (mMaxSample.m / mmax) * (H_M / 2 - 12) + 12}
+              x={X(mMaxSample.station)}
+              y={yMAxis - (mMaxSample.m / mmax) * (H_M / 2 - 12) - 4}
               fontSize={9}
               fill={PALETTE.moment}
               textAnchor="middle"
@@ -718,10 +731,10 @@ export function Diagrams({
               <path d={tPath} fill="none" stroke={PALETTE.theta} strokeWidth={1.4} />
             </>
           )}
-          <SectionLabel x={W - PAD} y={yT0 + 12} text="θ(x)" color={PALETTE.theta} />
+          <SectionLabel x={W - PAD} y={yT0 + 12} text="θ(s)" color={PALETTE.theta} />
           {samples.length > 0 && (
             <text
-              x={X(tMaxSample.x)}
+              x={X(tMaxSample.station)}
               y={yTAxis - (tMaxSample.t / tmax) * (H_T / 2 - 12) - 4}
               fontSize={9}
               fill={PALETTE.theta}
@@ -748,10 +761,10 @@ export function Diagrams({
               <path d={dPath} fill="none" stroke={PALETTE.delta} strokeWidth={1.4} />
             </>
           )}
-          <SectionLabel x={W - PAD} y={yD0 + 12} text="Δ(x)" color={PALETTE.delta} />
+          <SectionLabel x={W - PAD} y={yD0 + 12} text="Δ(s)" color={PALETTE.delta} />
           {samples.length > 0 && (
             <text
-              x={X(dMaxSample.x)}
+              x={X(dMaxSample.station)}
               y={yDAxis - (dMaxSample.d / dmax) * (H_D / 2 - 12) - 4}
               fontSize={9}
               fill={PALETTE.delta}
@@ -763,17 +776,17 @@ export function Diagrams({
           )}
         </g>
 
-        {xs.map((x, i) => (
+        {[0, totalStation / 2, totalStation].map((station, i) => (
           <text
-            key={`nx-${i}`}
-            x={X(x)}
+            key={`station-${i}`}
+            x={X(station)}
             y={H_BOT + 12}
             fontSize={9}
             fill={PALETTE.dim}
             textAnchor="middle"
             fontFamily="var(--font-mono)"
           >
-            {fmt(x)}
+            {fmt(station)}
           </text>
         ))}
       </svg>
@@ -939,6 +952,31 @@ function cleanResidual(n: number): number {
 
 function residualColor(n: number): string {
   return Math.abs(n) < 1e-6 ? PALETTE.reaction : "#ff7676";
+}
+
+function projectFrame(
+  nodes: Vec2[],
+  width: number,
+  height: number,
+  pad: number,
+): { X: (x: number) => number; Y: (y: number) => number } {
+  const xs = nodes.map((n) => n[0]);
+  const ys = nodes.map((n) => n[1]);
+  const xmin = xs.length ? Math.min(...xs) : 0;
+  const xmax = xs.length ? Math.max(...xs) : 1;
+  const ymin = ys.length ? Math.min(...ys) : 0;
+  const ymax = ys.length ? Math.max(...ys) : 1;
+  const xspan = Math.max(xmax - xmin, 1);
+  const yspan = Math.max(ymax - ymin, 1);
+  const scale = Math.min((width - 2 * pad) / xspan, (height - 2 * pad) / yspan);
+  const contentW = xspan * scale;
+  const contentH = yspan * scale;
+  const ox = (width - contentW) / 2;
+  const oy = (height - contentH) / 2;
+  return {
+    X: (x: number) => ox + (x - xmin) * scale,
+    Y: (y: number) => height - (oy + (y - ymin) * scale),
+  };
 }
 
 function ApiStatusPill({ state }: { state: ApiState }) {

@@ -5,9 +5,10 @@
 
 export type Vec2 = [number, number];
 export type Member = [number, number];
-export type PointLoad = [node: number, Fx: number, Fy: number];
+export type PointLoad = [node: number, Fx: number, Fy: number, M?: number];
 export type DistLoad = [member: number, wi: number, wj: number];
 export type Fixity = [node: number, Rx: number, Ry: number, Rm: number];
+export type MemberEndRelease = [member: number, end: "i" | "j"];
 
 export type SolveInput = {
   nodes: Vec2[];
@@ -17,6 +18,8 @@ export type SolveInput = {
   fixity: Fixity[];
   EA?: number;
   EI?: number;
+  memberProps?: { EA: number; EI: number }[];
+  releases?: MemberEndRelease[];
 };
 
 export type MemberResult = {
@@ -108,6 +111,62 @@ function matVec(A: number[][], x: number[]): number[] {
   return R;
 }
 
+function condenseReleasedRotations(
+  kLocal: number[][],
+  feLocal: number[],
+  released: number[],
+): { kLocal: number[][]; feLocal: number[] } {
+  if (released.length === 0) return { kLocal, feLocal };
+
+  const kept = [0, 1, 2, 3, 4, 5].filter((idx) => !released.includes(idx));
+  const Kaa = kept.map((r) => kept.map((c) => kLocal[r][c]));
+  const Kar = kept.map((r) => released.map((c) => kLocal[r][c]));
+  const Kra = released.map((r) => kept.map((c) => kLocal[r][c]));
+  const Krr = released.map((r) => released.map((c) => kLocal[r][c]));
+  const fa = kept.map((idx) => feLocal[idx]);
+  const fr = released.map((idx) => feLocal[idx]);
+
+  const invKrrKraCols = transposeSolve(Krr, Kra);
+  const invKrrFr =
+    gaussSolve(
+      Krr.map((row) => row.slice()),
+      fr,
+    ) ?? new Array(released.length).fill(0);
+  const condensedKaa = subtract(Kaa, matMul(Kar, invKrrKraCols));
+  const condensedFa = subtractVec(fa, matVec(Kar, invKrrFr));
+
+  const outK = Array.from({ length: 6 }, () => new Array(6).fill(0));
+  const outF = new Array(6).fill(0);
+  for (let r = 0; r < kept.length; r++) {
+    outF[kept[r]] = condensedFa[r];
+    for (let c = 0; c < kept.length; c++)
+      outK[kept[r]][kept[c]] = condensedKaa[r][c];
+  }
+  return { kLocal: outK, feLocal: outF };
+}
+
+function transposeSolve(A: number[][], B: number[][]): number[][] {
+  if (B.length === 0) return [];
+  const rows = A.length;
+  const cols = B[0]?.length ?? 0;
+  const out = Array.from({ length: rows }, () => new Array(cols).fill(0));
+  for (let col = 0; col < cols; col++) {
+    const rhs = B.map((row) => row[col]);
+    const sol = gaussSolve(A.map((row) => row.slice()), rhs);
+    if (!sol) continue;
+    for (let row = 0; row < rows; row++) out[row][col] = sol[row];
+  }
+  return out;
+}
+
+function subtract(A: number[][], B: number[][]): number[][] {
+  return A.map((row, r) => row.map((value, c) => value - B[r][c]));
+}
+
+function subtractVec(a: number[], b: number[]): number[] {
+  return a.map((value, idx) => value - b[idx]);
+}
+
 // Solve A x = b via Gauss elimination with partial pivoting.
 function gaussSolve(A: number[][], b: number[]): number[] | null {
   const n = A.length;
@@ -183,10 +242,19 @@ export function solve(inp: SolveInput): Solution {
     T: number[][];
     kLocal: number[][];
     feLocal: number[]; // fixed-end forces in local
+    released: number[];
     qi: number; // local-y load at i
     qj: number; // local-y load at j
+    EI: number;
   };
   const mpre: MPre[] = [];
+  const releasesByMember = new Map<number, number[]>();
+  for (const [member, end] of inp.releases ?? []) {
+    const idx = end === "i" ? 2 : 5;
+    const prev = releasesByMember.get(member) ?? [];
+    if (!prev.includes(idx)) prev.push(idx);
+    releasesByMember.set(member, prev);
+  }
 
   // Sum dist loads by member index
   const distByMember = new Map<number, [number, number]>();
@@ -205,7 +273,9 @@ export function solve(inp: SolveInput): Solution {
     const c = dx / L;
     const s = dy / L;
     const T = rotation6(c, s);
-    const kLocal = frame2dLocalK(EA, EI, L);
+    const mEA = inp.memberProps?.[mIdx]?.EA ?? EA;
+    const mEI = inp.memberProps?.[mIdx]?.EI ?? EI;
+    let kLocal = frame2dLocalK(mEA, mEI, L);
     // global K contribution
     const kG = matMul(matT(T), matMul(kLocal, T));
     const dof = [3 * i, 3 * i + 1, 3 * i + 2, 3 * j, 3 * j + 1, 3 * j + 2];
@@ -221,19 +291,36 @@ export function solve(inp: SolveInput): Solution {
     const qi = wiG * c; // project global (0, wG) onto local +y axis (-s, c)
     const qj = wjG * c;
     const feL = equivNodalLocal(qi, qj, L);
+    const released = releasesByMember.get(mIdx) ?? [];
+    const condensed = condenseReleasedRotations(kLocal, feL, released);
+    kLocal = condensed.kLocal;
     // feL is already the equivalent nodal load in local → add directly after
     // rotating to global.
-    const feG = matVec(matT(T), feL);
+    const feG = matVec(matT(T), condensed.feLocal);
     for (let a = 0; a < 6; a++) F[dof[a]] += feG[a];
 
-    mpre.push({ i, j, L, c, s, T, kLocal, feLocal: feL, qi, qj });
+    mpre.push({
+      i,
+      j,
+      L,
+      c,
+      s,
+      T,
+      kLocal,
+      feLocal: condensed.feLocal,
+      released,
+      qi,
+      qj,
+      EI: mEI,
+    });
   }
 
   // Point loads
-  for (const [n, fx, fy] of inp.pointLoads) {
+  for (const [n, fx, fy, mz = 0] of inp.pointLoads) {
     if (!inp.nodes[n]) continue;
     F[3 * n] += fx;
     F[3 * n + 1] += fy;
+    F[3 * n + 2] += mz;
   }
 
   // Boundary conditions: constrained DOFs
@@ -248,8 +335,10 @@ export function solve(inp: SolveInput): Solution {
   // Partition
   const free: number[] = [];
   const fixed: number[] = [];
-  for (let d = 0; d < ndof; d++)
-    constrained[d] ? fixed.push(d) : free.push(d);
+  for (let d = 0; d < ndof; d++) {
+    if (constrained[d]) fixed.push(d);
+    else free.push(d);
+  }
 
   if (free.length === 0) {
     return {
@@ -311,6 +400,7 @@ export function solve(inp: SolveInput): Solution {
     const uL = matVec(m.T, uG);
     const kU = matVec(m.kLocal, uL);
     const fInt = kU.map((v, k) => v - m.feLocal[k]);
+    for (const released of m.released) fInt[released] = 0;
     const Ni = fInt[0];
     const Vi_end = fInt[1];
     const Mi_end = fInt[2];
@@ -318,7 +408,7 @@ export function solve(inp: SolveInput): Solution {
     const Vj_end = fInt[4];
     const Mj_end = fInt[5];
 
-    const { L, qi, qj } = m;
+    const { L, qi, qj, EI: memberEI } = m;
     const intQ = (s: number) =>
       qi * s + ((qj - qi) * s * s) / (2 * L);
     const intIntQ = (s: number) =>
@@ -361,17 +451,17 @@ export function solve(inp: SolveInput): Solution {
     // Particular deflection/rotation from distributed load with zero end
     // conditions. Split into uniform (qi) + triangular (qj − qi) components.
     const deltaP = (s: number): number => {
-      const uPart = (qi * s * s * (L - s) * (L - s)) / (24 * EI);
+      const uPart = (qi * s * s * (L - s) * (L - s)) / (24 * memberEI);
       const tPart =
         ((qj - qi) * (Math.pow(s, 5) / L - 3 * L * s * s * s + 2 * L * L * s * s)) /
-        (120 * EI);
+        (120 * memberEI);
       return uPart + tPart;
     };
     const thetaP = (s: number): number => {
-      const uPart = (qi * s * (L - s) * (L - 2 * s)) / (12 * EI);
+      const uPart = (qi * s * (L - s) * (L - 2 * s)) / (12 * memberEI);
       const tPart =
         ((qj - qi) * (5 * Math.pow(s, 4) / L - 9 * L * s * s + 4 * L * L * s)) /
-        (120 * EI);
+        (120 * memberEI);
       return uPart + tPart;
     };
     const theta = (s: number): number => hermiteTheta(s) + thetaP(s);

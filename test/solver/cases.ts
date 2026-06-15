@@ -16,6 +16,12 @@ export type ExpectedSample = {
   delta?: number;
 };
 
+export type ExpectedMemberDirection = {
+  member: number;
+  c: number;
+  s: number;
+};
+
 export type SolverCase = {
   name: string;
   input: SolveInput;
@@ -23,6 +29,7 @@ export type SolverCase = {
     ok?: boolean;
     reactions?: ExpectedReaction[];
     samples?: ExpectedSample[];
+    memberDirections?: ExpectedMemberDirection[];
     errorIncludes?: string;
   };
   tolerance?: number;
@@ -284,6 +291,68 @@ export const solverCases: SolverCase[] = [
     },
   },
   {
+    name: "fixed-pinned beam with j-end release and uniform load",
+    input: {
+      ...base({
+        nodes: [
+          [0, 0],
+          [10, 0],
+        ],
+        members: [[0, 1]],
+        fixity: [
+          [0, 1, 1, 1],
+          [1, 0, 1, 0],
+        ],
+        pointLoads: [],
+        distLoads: [[0, -2, -2]],
+      }),
+      releases: [[0, "j"]],
+    },
+    expect: {
+      reactions: [
+        { node: 0, Ry: 12.5, M: 25 },
+        { node: 1, Ry: 7.5 },
+      ],
+      samples: [
+        { member: 0, s: 0, M: -25 },
+        { member: 0, s: 10, M: 0 },
+      ],
+    },
+  },
+  {
+    name: "fixed-ended beam with both end releases behaves simply supported",
+    input: {
+      ...base({
+        nodes: [
+          [0, 0],
+          [10, 0],
+        ],
+        members: [[0, 1]],
+        fixity: [
+          [0, 1, 1, 1],
+          [1, 0, 1, 1],
+        ],
+        pointLoads: [],
+        distLoads: [[0, -2, -2]],
+      }),
+      releases: [
+        [0, "i"],
+        [0, "j"],
+      ],
+    },
+    expect: {
+      reactions: [
+        { node: 0, Ry: 10, M: 0 },
+        { node: 1, Ry: 10, M: 0 },
+      ],
+      samples: [
+        { member: 0, s: 0, M: 0 },
+        { member: 0, s: 5, M: 25 },
+        { member: 0, s: 10, M: 0 },
+      ],
+    },
+  },
+  {
     name: "two-span continuous beam with uniform load",
     input: base({
       nodes: [
@@ -317,6 +386,82 @@ export const solverCases: SolverCase[] = [
         { member: 0, s: 10, M: -25 },
         { member: 1, s: 0, M: -25 },
         { member: 1, s: 5, M: 12.5 },
+      ],
+    },
+  },
+  {
+    name: "two-span continuous beam honors per-member stiffness",
+    input: {
+      nodes: [
+        [0, 0],
+        [8, 0],
+        [20, 0],
+      ],
+      members: [
+        [0, 1],
+        [1, 2],
+      ],
+      fixity: [
+        [0, 1, 1, 0],
+        [1, 0, 1, 0],
+        [2, 0, 1, 0],
+      ],
+      pointLoads: [],
+      distLoads: [
+        [0, -2, -2],
+        [1, -3, -3],
+      ],
+      memberProps: [
+        { EA, EI: EI * 4 },
+        { EA, EI },
+      ],
+    },
+    expect: {
+      reactions: [
+        { node: 0, Ry: 1.9285714285714288 },
+        { node: 1, Ry: 36.11904761904762 },
+        { node: 2, Ry: 13.952380952380953 },
+      ],
+      samples: [
+        { member: 0, s: 4, M: -8.285714285714285 },
+        { member: 0, s: 8, M: -48.57142857142857 },
+        { member: 1, s: 0, M: -48.57142857142857 },
+        { member: 1, s: 6, M: 29.714285714285708 },
+      ],
+    },
+  },
+  {
+    name: "symmetric portal moment frame with center point load",
+    input: base({
+      nodes: [
+        [0, 0],
+        [0, 10],
+        [5, 10],
+        [10, 10],
+        [10, 0],
+      ],
+      members: [
+        [0, 1],
+        [1, 2],
+        [2, 3],
+        [3, 4],
+      ],
+      fixity: [
+        [0, 1, 1, 1],
+        [4, 1, 1, 1],
+      ],
+      pointLoads: [[2, 0, -10]],
+      distLoads: [],
+    }),
+    expect: {
+      reactions: [
+        { node: 0, Ry: 5 },
+        { node: 4, Ry: 5 },
+      ],
+      memberDirections: [
+        { member: 0, c: 0, s: 1 },
+        { member: 1, c: 1, s: 0 },
+        { member: 3, c: 0, s: -1 },
       ],
     },
   },

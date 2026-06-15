@@ -1,0 +1,17 @@
+{
+  "name": "partial uniform load",
+  "request": {
+    "nodes": [[0, 0], [4, 0], [10, 0]],
+    "members": [
+      { "i": 0, "j": 1, "E": 29000, "I": 100, "A": 10 },
+      { "i": 1, "j": 2, "E": 29000, "I": 100, "A": 10 }
+    ],
+    "supports": [
+      { "node": 0, "Rx": true, "Ry": true, "Rm": false },
+      { "node": 2, "Rx": false, "Ry": true, "Rm": false }
+    ],
+    "distLoads": [{ "member": 0, "wi": -2, "wj": -2 }],
+    "samplesPerMember": 40,
+    "include": ["data"]
+  }
+}

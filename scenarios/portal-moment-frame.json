@@ -1,0 +1,20 @@
+{
+  "name": "portal moment frame",
+  "request": {
+    "nodes": [[0, 0], [0, 120], [60, 120], [120, 120], [120, 0]],
+    "members": [
+      { "i": 0, "j": 1, "E": 29000, "I": 100, "A": 10 },
+      { "i": 1, "j": 2, "E": 29000, "I": 100, "A": 10 },
+      { "i": 2, "j": 3, "E": 29000, "I": 100, "A": 10 },
+      { "i": 3, "j": 4, "E": 29000, "I": 100, "A": 10 }
+    ],
+    "supports": [
+      { "node": 0, "Rx": true, "Ry": true, "Rm": true },
+      { "node": 4, "Rx": true, "Ry": true, "Rm": true }
+    ],
+    "pointLoads": [{ "node": 2, "Fx": 0, "Fy": -10 }],
+    "samplesPerMember": 40,
+    "include": ["data", "svg"],
+    "lengthUnit": "in"
+  }
+}

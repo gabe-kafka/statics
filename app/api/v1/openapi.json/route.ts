@@ -103,6 +103,8 @@ const SPEC = {
           },
           members: {
             type: "array",
+            description:
+              "Frame members. E, I, and A are applied per member as E·I and E·A; mixed sections are supported.",
             items: {
               type: "object",
               required: ["i", "j", "E", "I", "A"],
@@ -156,10 +158,13 @@ const SPEC = {
           },
           hinges: {
             type: "array",
-            description: "Reserved for future use — moment release at member ends.",
+            description:
+              "Moment releases at explicit member ends. Use member/end; node/memberSide is accepted as a compatibility alias.",
             items: {
               type: "object",
               properties: {
+                member: { type: "integer" },
+                end: { type: "string", enum: ["i", "j"] },
                 node: { type: "integer" },
                 memberSide: { type: "string", enum: ["i", "j"] },
               },
@@ -206,6 +211,8 @@ const SPEC = {
                 i: { type: "integer" },
                 j: { type: "integer" },
                 L: { type: "number" },
+                c: { type: "number", description: "member direction cosine" },
+                s: { type: "number", description: "member direction sine" },
                 endForces: {
                   type: "object",
                   properties: {
@@ -224,6 +231,7 @@ const SPEC = {
                     properties: {
                       s: { type: "number", description: "distance along member" },
                       x: { type: "number", description: "global x at this sample" },
+                      y: { type: "number", description: "global y at this sample" },
                       V: { type: "number" },
                       M: { type: "number" },
                       theta: { type: "number" },
@@ -273,6 +281,7 @@ const SPEC = {
         properties: {
           value: { type: "number" },
           x: { type: "number" },
+          y: { type: "number" },
           member: { type: "integer" },
           sLocal: { type: "number" },
         },

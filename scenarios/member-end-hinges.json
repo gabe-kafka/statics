@@ -1,0 +1,18 @@
+{
+  "name": "member end hinges",
+  "request": {
+    "nodes": [[0, 0], [10, 0]],
+    "members": [{ "i": 0, "j": 1, "E": 29000, "I": 100, "A": 10 }],
+    "supports": [
+      { "node": 0, "Rx": true, "Ry": true, "Rm": true },
+      { "node": 1, "Rx": false, "Ry": true, "Rm": true }
+    ],
+    "distLoads": [{ "member": 0, "wi": -2, "wj": -2 }],
+    "hinges": [
+      { "member": 0, "end": "i" },
+      { "member": 0, "end": "j" }
+    ],
+    "samplesPerMember": 40,
+    "include": ["data"]
+  }
+}

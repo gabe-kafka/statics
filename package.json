@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "prisma generate && prisma db push --accept-data-loss && next build",
+    "build": "prisma generate && next build",
     "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "db:deploy": "prisma migrate deploy",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsc -p tsconfig.test.json && node .test-dist/test/solver/solver.test.js"
+    "test": "tsc -p tsconfig.test.json && node .test-dist/test/solver/solver.test.js",
+    "scenarios": "tsc -p tsconfig.scenarios.json && node .scenario-dist/scripts/run-scenarios.js"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

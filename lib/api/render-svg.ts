@@ -4,8 +4,6 @@
 // React on the server.
 
 import type {
-  MemberOut,
-  ReactionOut,
   SolveResponse,
   SvgOut,
 } from "./types";
@@ -75,11 +73,9 @@ export function renderSvg(
   req: SolveRequest,
   res: Pick<SolveResponse, "members" | "reactions">,
 ): SvgOut {
-  const xs = req.nodes.map((n) => n[0]);
-  const xmin = Math.min(...xs);
-  const xmax = Math.max(...xs);
-  const xspan = Math.max(xmax - xmin, 1);
-  const X = (x: number) => PAD + ((x - xmin) / xspan) * (W - 2 * PAD);
+  const stationEnds = memberStationEnds(res.members);
+  const totalStation = Math.max(stationEnds[stationEnds.length - 1] ?? 1, 1);
+  const X = (s: number) => PAD + (s / totalStation) * (W - 2 * PAD);
 
   // The data payload stays in API-internal units (in / k·in). Display
   // labels on the SVGs are converted into the caller's preferred unit.
@@ -87,8 +83,7 @@ export function renderSvg(
   // structural practice; callers who actually want inches must opt in.
   const unit = req.lengthUnit ?? "ft";
   const lenScale = INCHES_PER_UNIT[unit];
-  const ux = (xInches: number) => xInches / lenScale; // x-axis label
-  const uM = (mKipIn: number) => mKipIn / lenScale; // moment label
+  const ux = (xInches: number) => xInches / lenScale; // station-axis label
   // Dist-load intensities arrive in force-per-inch (build-request side
   // divides k/ft by 12 before sending). Multiply by lenScale to get
   // back to force-per-{user-unit} for the label.
@@ -96,17 +91,51 @@ export function renderSvg(
 
   const palette = paletteFor(req.theme);
 
-  const fbd = renderFbd(req, res, X, xs, ux, unit, uW, palette);
-  const V = renderCurve(res, X, "V", palette.shear, "V(x)", palette);
-  const M = renderCurve(res, X, "M", palette.moment, `M(x) [k·${unit}]`, palette, {
-    sagBelow: true,
+  const fbd = renderFbd(req, res, ux, unit, uW, palette);
+  const V = renderCurve(res, X, stationEnds, "V", palette.shear, "V(s)", palette);
+  const M = renderCurve(res, X, stationEnds, "M", palette.moment, `M(s) [k·${unit}]`, palette, {
     valueScale: 1 / lenScale,
   });
-  const theta = renderCurve(res, X, "theta", palette.theta, "θ(x)", palette);
-  const delta = renderCurve(res, X, "delta", palette.delta, "Δ(x)", palette);
-  const all = renderAll(fbd, V, M, theta, delta, xs, X, ux, unit, palette);
+  const theta = renderCurve(res, X, stationEnds, "theta", palette.theta, "θ(s)", palette);
+  const delta = renderCurve(res, X, stationEnds, "delta", palette.delta, "Δ(s)", palette);
+  const all = renderAll(fbd, V, M, theta, delta, totalStation, X, ux, unit, palette);
 
   return { fbd, V, M, theta, delta, all };
+}
+
+function memberStationEnds(members: Pick<SolveResponse, "members">["members"]): number[] {
+  const out: number[] = [];
+  let acc = 0;
+  for (const member of members) {
+    acc += member.L;
+    out.push(acc);
+  }
+  return out;
+}
+
+function projectFrame(
+  nodes: SolveRequest["nodes"],
+  width: number,
+  height: number,
+  pad: number,
+): { X: (x: number) => number; Y: (y: number) => number } {
+  const xs = nodes.map((n) => n[0]);
+  const ys = nodes.map((n) => n[1]);
+  const xmin = xs.length ? Math.min(...xs) : 0;
+  const xmax = xs.length ? Math.max(...xs) : 1;
+  const ymin = ys.length ? Math.min(...ys) : 0;
+  const ymax = ys.length ? Math.max(...ys) : 1;
+  const xspan = Math.max(xmax - xmin, 1);
+  const yspan = Math.max(ymax - ymin, 1);
+  const scale = Math.min((width - 2 * pad) / xspan, (height - 2 * pad) / yspan);
+  const contentW = xspan * scale;
+  const contentH = yspan * scale;
+  const ox = (width - contentW) / 2;
+  const oy = (height - contentH) / 2;
+  return {
+    X: (x: number) => ox + (x - xmin) * scale,
+    Y: (y: number) => height - (oy + (y - ymin) * scale),
+  };
 }
 
 function svgWrap(
@@ -168,15 +197,13 @@ function arrow(
 function renderFbd(
   req: SolveRequest,
   res: Pick<SolveResponse, "reactions">,
-  X: (x: number) => number,
-  xs: number[],
   ux: (xInches: number) => number,
   unitLbl: string,
   uW: (wKipPerIn: number) => number,
   palette: Palette,
 ): string {
   const H = 220;
-  const yBeam = H * 0.5;
+  const frame = projectFrame(req.nodes, W, H, 34);
   const out: string[] = [];
 
   // Distributed loads: callers (e.g. the structural-terminal builder)
@@ -217,24 +244,25 @@ function renderFbd(
     ...bars.flatMap((b) => [Math.abs(b.w0), Math.abs(b.w1)]),
   );
   for (const bar of bars) {
-    const xa = X(bar.x0);
-    const xb = X(bar.x1);
+    const xa = frame.X(bar.x0);
+    const xb = frame.X(bar.x1);
+    const yBase = frame.Y(req.nodes[0]?.[1] ?? 0);
     const SCALE = Math.min(55, 30 * (1 + wMaxAll / 6));
     const ha = (Math.abs(bar.w0) / wMaxAll) * SCALE;
     const hb = (Math.abs(bar.w1) / wMaxAll) * SCALE;
-    const ya = yBeam - ha - 2;
-    const yb = yBeam - hb - 2;
+    const ya = yBase - ha - 2;
+    const yb = yBase - hb - 2;
     out.push(
       `<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" stroke="${palette.load}" stroke-width="1.4"/>`,
-      `<line x1="${xa}" y1="${ya}" x2="${xa}" y2="${yBeam - 2}" stroke="${palette.load}" stroke-width="1.2"/>`,
-      `<line x1="${xb}" y1="${yb}" x2="${xb}" y2="${yBeam - 2}" stroke="${palette.load}" stroke-width="1.2"/>`,
+      `<line x1="${xa}" y1="${ya}" x2="${xa}" y2="${yBase - 2}" stroke="${palette.load}" stroke-width="1.2"/>`,
+      `<line x1="${xb}" y1="${yb}" x2="${xb}" y2="${yBase - 2}" stroke="${palette.load}" stroke-width="1.2"/>`,
     );
     const N = Math.max(3, Math.round((xb - xa) / 24));
     for (let n = 1; n <= N - 1; n++) {
       const t = n / N;
       const xi = xa + t * (xb - xa);
       const yi = ya + t * (yb - ya);
-      out.push(arrow(xi, yi, xi, yBeam - 3, palette.load, 4));
+      out.push(arrow(xi, yi, xi, yBase - 3, palette.load, 4));
     }
     const midX = (xa + xb) / 2;
     const midY = Math.min(ya, yb) - 6;
@@ -253,8 +281,8 @@ function renderFbd(
   for (const pl of req.pointLoads ?? []) {
     if (!req.nodes[pl.node]) continue;
     if (pl.Fx === 0 && pl.Fy === 0) continue;
-    const cx = X(req.nodes[pl.node][0]);
-    const cy = yBeam;
+    const cx = frame.X(req.nodes[pl.node][0]);
+    const cy = frame.Y(req.nodes[pl.node][1]);
     const L = 40;
     if (pl.Fy !== 0) {
       const down = pl.Fy < 0;
@@ -272,15 +300,15 @@ function renderFbd(
     const a = req.nodes[m.i];
     const b = req.nodes[m.j];
     out.push(
-      `<line x1="${X(a[0])}" y1="${yBeam}" x2="${X(b[0])}" y2="${yBeam}" stroke="${palette.beam}" stroke-width="2.5" stroke-linecap="round"/>`,
+      `<line x1="${frame.X(a[0])}" y1="${frame.Y(a[1])}" x2="${frame.X(b[0])}" y2="${frame.Y(b[1])}" stroke="${palette.beam}" stroke-width="2.5" stroke-linecap="round"/>`,
     );
   }
 
   // supports
   for (const sup of req.supports) {
     if (!req.nodes[sup.node]) continue;
-    const cx = X(req.nodes[sup.node][0]);
-    const cy = yBeam;
+    const cx = frame.X(req.nodes[sup.node][0]);
+    const cy = frame.Y(req.nodes[sup.node][1]);
     if (sup.Rx && sup.Ry && sup.Rm) {
       out.push(
         `<rect x="${cx - 12}" y="${cy}" width="24" height="10" fill="${palette.support}" fill-opacity="0.35" stroke="${palette.support}"/>`,
@@ -305,8 +333,8 @@ function renderFbd(
   );
   for (const r of res.reactions) {
     if (!req.nodes[r.node]) continue;
-    const cx = X(req.nodes[r.node][0]);
-    const cy = yBeam + 30;
+    const cx = frame.X(req.nodes[r.node][0]);
+    const cy = frame.Y(req.nodes[r.node][1]) + 30;
     const L = (Math.abs(r.Ry) / Rmax) * 36 + 4;
     if (Math.abs(r.Ry) > 1e-3) {
       out.push(arrow(cx, cy + L, cx, cy + 3, palette.reaction, 6));
@@ -316,10 +344,10 @@ function renderFbd(
     }
   }
 
-  // node ticks (converted to caller's display unit)
-  for (const x of xs) {
+  // node labels (converted to caller's display unit)
+  for (const [x, y] of req.nodes) {
     out.push(
-      `<text x="${X(x)}" y="${H - 4}" fill="${palette.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(ux(x)))}</text>`,
+      `<text x="${frame.X(x)}" y="${frame.Y(y) + 26}" fill="${palette.dim}" font-size="9" text-anchor="middle">${escapeText(`${fmt(ux(x))},${fmt(ux(y))}`)}</text>`,
     );
   }
 
@@ -378,6 +406,7 @@ function findExtrema<F extends ExtremumField>(
 function renderCurve(
   res: Pick<SolveResponse, "members">,
   X: (x: number) => number,
+  stationEnds: number[],
   field: ExtremumField,
   color: string,
   label: string,
@@ -386,7 +415,10 @@ function renderCurve(
 ): string {
   const H = 150;
   const yAxis = H / 2;
-  const samples = res.members.flatMap((m) => m.samples);
+  const samples = res.members.flatMap((m, memberIdx) => {
+    const start = memberIdx === 0 ? 0 : stationEnds[memberIdx - 1];
+    return m.samples.map((sample) => ({ ...sample, x: start + sample.s }));
+  });
   const max = Math.max(1e-12, ...samples.map((s) => Math.abs(s[field])));
   const sign = opts.sagBelow ? +1 : -1;
   const valueScale = opts.valueScale ?? 1;
@@ -430,7 +462,7 @@ function renderAll(
   M: string,
   theta: string,
   delta: string,
-  xs: number[],
+  totalStation: number,
   X: (x: number) => number,
   ux: (xInches: number) => number,
   unitLbl: string,
@@ -454,13 +486,13 @@ function renderAll(
   }
   // x-axis labels at the very bottom — converted to display unit.
   const tickY = y + 10;
-  for (const x of xs) {
+  for (const x of [0, totalStation / 2, totalStation]) {
     parts.push(
       `<text x="${X(x)}" y="${tickY}" fill="${palette.dim}" font-size="9" text-anchor="middle">${escapeText(fmt(ux(x)))}</text>`,
     );
   }
   parts.push(
-    `<text x="${W - PAD}" y="${tickY}" fill="${palette.dim}" font-size="9" text-anchor="end">x [${unitLbl}]</text>`,
+    `<text x="${W - PAD}" y="${tickY}" fill="${palette.dim}" font-size="9" text-anchor="end">s [${unitLbl}]</text>`,
   );
   return svgWrap(W, y + 18, parts.join(""), palette);
 }

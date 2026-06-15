@@ -88,6 +88,11 @@ export function validate(req: SolveRequest): ApiError | null {
         field: `pointLoads[${p}].node`,
         value: pl.node,
       });
+    if (!isFiniteNum(pl.Fx) || !isFiniteNum(pl.Fy) || (pl.M !== undefined && !isFiniteNum(pl.M)))
+      return err("invalid_input", `pointLoads[${p}] must have finite Fx, Fy, and optional M.`, {
+        field: `pointLoads[${p}]`,
+        value: pl,
+      });
   }
   for (let d = 0; d < (req.distLoads ?? []).length; d++) {
     const dl = req.distLoads![d];
@@ -97,6 +102,35 @@ export function validate(req: SolveRequest): ApiError | null {
         `distLoads[${d}] references invalid member ${dl.member}.`,
         { field: `distLoads[${d}].member`, value: dl.member },
       );
+  }
+
+  for (let h = 0; h < (req.hinges ?? []).length; h++) {
+    const hinge = req.hinges![h];
+    const end = hinge.end ?? hinge.memberSide;
+    if (end !== "i" && end !== "j")
+      return err("invalid_input", `hinges[${h}] must specify end "i" or "j".`, {
+        field: `hinges[${h}].end`,
+        value: hinge,
+      });
+    if (hinge.member !== undefined) {
+      if (!Number.isInteger(hinge.member) || hinge.member < 0 || hinge.member >= req.members.length)
+        return err("invalid_input", `hinges[${h}] references invalid member ${hinge.member}.`, {
+          field: `hinges[${h}].member`,
+          value: hinge.member,
+        });
+      continue;
+    }
+    if (hinge.node === undefined || !Number.isInteger(hinge.node) || hinge.node < 0 || hinge.node >= req.nodes.length)
+      return err("invalid_input", `hinges[${h}] must reference a valid member or node.`, {
+        field: `hinges[${h}]`,
+        value: hinge,
+      });
+    const matches = req.members.filter((member) => member[end] === hinge.node);
+    if (matches.length === 0)
+      return err("invalid_input", `hinges[${h}] did not match a member ${end}-end at node ${hinge.node}.`, {
+        field: `hinges[${h}]`,
+        value: hinge,
+      });
   }
 
   // ── Stability: count restrained DOFs ──────────────────────────

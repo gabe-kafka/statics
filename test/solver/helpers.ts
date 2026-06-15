@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import type { ExpectedReaction, ExpectedSample, SolverCase } from "./cases";
+import type {
+  ExpectedMemberDirection,
+  ExpectedReaction,
+  ExpectedSample,
+  SolverCase,
+} from "./cases";
 import type { Solution } from "../../lib/solver";
 
 export function assertCase(solution: Solution, testCase: SolverCase): void {
@@ -20,6 +25,10 @@ export function assertCase(solution: Solution, testCase: SolverCase): void {
 
   for (const sample of testCase.expect.samples ?? []) {
     assertSample(solution, sample, tolerance);
+  }
+
+  for (const direction of testCase.expect.memberDirections ?? []) {
+    assertMemberDirection(solution, direction, tolerance);
   }
 }
 
@@ -56,6 +65,17 @@ function assertSample(
     tolerance,
     `member ${expected.member} delta(${expected.s})`,
   );
+}
+
+function assertMemberDirection(
+  solution: Solution,
+  expected: ExpectedMemberDirection,
+  tolerance: number,
+): void {
+  const member = solution.members[expected.member];
+  assert.ok(member, `missing member ${expected.member}`);
+  assertClose(member.c, expected.c, tolerance, `member ${expected.member} c`);
+  assertClose(member.s, expected.s, tolerance, `member ${expected.member} s`);
 }
 
 function assertClose(

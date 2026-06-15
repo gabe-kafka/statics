@@ -8,7 +8,16 @@ export type SolveRequest = {
   supports: { node: number; Rx: boolean; Ry: boolean; Rm: boolean }[];
   pointLoads?: { node: number; Fx: number; Fy: number; M?: number }[];
   distLoads?: { member: number; wi: number; wj: number }[];
-  hinges?: { node: number; memberSide?: "i" | "j" }[];
+  hinges?: {
+    /** Preferred explicit member index. */
+    member?: number;
+    /** Preferred explicit member end. */
+    end?: "i" | "j";
+    /** Compatibility alias: release the first matching member end at this node. */
+    node?: number;
+    /** Compatibility alias for `end`. */
+    memberSide?: "i" | "j";
+  }[];
   samplesPerMember?: number;
   include?: ("data" | "svg")[];
   /**
@@ -46,7 +55,7 @@ export type ApiError = {
 };
 
 export type ApiWarning = {
-  code: "near_singular";
+  code: string;
   message: string;
   details?: unknown;
 };
@@ -69,7 +78,10 @@ export type EndForcesOut = {
 
 export type SampleOut = {
   s: number;
+  /** Global x-coordinate of this sample. */
   x: number;
+  /** Global y-coordinate of this sample. */
+  y: number;
   V: number;
   M: number;
   theta: number;
@@ -80,6 +92,10 @@ export type MemberOut = {
   i: number;
   j: number;
   L: number;
+  /** Direction cosine from node i to node j. */
+  c: number;
+  /** Direction sine from node i to node j. */
+  s: number;
   endForces: EndForcesOut;
   samples: SampleOut[];
 };
@@ -87,6 +103,7 @@ export type MemberOut = {
 export type PeakOut = {
   value: number;
   x: number;
+  y: number;
   member: number;
   sLocal: number;
 };

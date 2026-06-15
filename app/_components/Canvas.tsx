@@ -52,12 +52,13 @@ export function Canvas({
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [view, setView] = useState<View>({ tx: 0, ty: 0, scale: 30 });
   const viewRef = useRef(view);
-  viewRef.current = view;
-  const [initialized, setInitialized] = useState(false);
+  const initializedRef = useRef(false);
 
   const [cursor, setCursor] = useState<Vec2 | null>(null);
   const [snap, setSnap] = useState<SnapHit>(null);
   const [anchor, setAnchor] = useState<{ i: number; p: Vec2 } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [isSpaceDown, setIsSpaceDown] = useState(false);
 
   const panRef = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(
     null,
@@ -65,23 +66,14 @@ export function Canvas({
   const spaceRef = useRef(false);
 
   useEffect(() => {
-    if (!svgRef.current) return;
-    const el = svgRef.current;
-    const ro = new ResizeObserver(() => {
-      const r = el.getBoundingClientRect();
-      setSize({ w: r.width, h: r.height });
-    });
-    ro.observe(el);
-    const r = el.getBoundingClientRect();
-    setSize({ w: r.width, h: r.height });
-    return () => ro.disconnect();
-  }, []);
+    viewRef.current = view;
+  }, [view]);
 
-  useEffect(() => {
-    if (initialized || size.w === 0 || size.h === 0) return;
-    if (nodes.length === 0) {
-      setView({ tx: size.w / 2, ty: size.h / 2, scale: 30 });
-    } else {
+  const fittedView = useCallback(
+    (w: number, h: number): View => {
+      if (nodes.length === 0) {
+        return { tx: w / 2, ty: h / 2, scale: 30 };
+      }
       const xs = nodes.map((n) => n[0]);
       const ys = nodes.map((n) => n[1]);
       const minX = Math.min(...xs),
@@ -91,19 +83,37 @@ export function Canvas({
       const dx = Math.max(maxX - minX, 1);
       const dy = Math.max(maxY - minY, 1);
       const pad = 60;
-      const sx = (size.w - pad * 2) / dx;
-      const sy = (size.h - pad * 2) / dy;
+      const sx = (w - pad * 2) / dx;
+      const sy = (h - pad * 2) / dy;
       const scale = Math.max(4, Math.min(sx, sy, 200));
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
-      setView({
-        tx: size.w / 2 - cx * scale,
-        ty: size.h / 2 + cy * scale,
+      return {
+        tx: w / 2 - cx * scale,
+        ty: h / 2 + cy * scale,
         scale,
-      });
-    }
-    setInitialized(true);
-  }, [initialized, size, nodes]);
+      };
+    },
+    [nodes],
+  );
+
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const el = svgRef.current;
+    const updateSize = () => {
+      const r = el.getBoundingClientRect();
+      const nextSize = { w: r.width, h: r.height };
+      setSize(nextSize);
+      if (!initializedRef.current && r.width > 0 && r.height > 0) {
+        setView(fittedView(r.width, r.height));
+        initializedRef.current = true;
+      }
+    };
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    updateSize();
+    return () => ro.disconnect();
+  }, [fittedView]);
 
   const toWorld = useCallback(
     (px: number, py: number): Vec2 => [
@@ -210,6 +220,7 @@ export function Canvas({
     if (e.button === 1 || spaceRef.current || e.button === 2) {
       const [px, py] = clientToSvg(e);
       panRef.current = { ox: px, oy: py, tx: view.tx, ty: view.ty };
+      setIsPanning(true);
       svgRef.current.setPointerCapture(e.pointerId);
       e.preventDefault();
       return;
@@ -261,6 +272,7 @@ export function Canvas({
     if (panRef.current && svgRef.current) {
       svgRef.current.releasePointerCapture(e.pointerId);
       panRef.current = null;
+      setIsPanning(false);
     }
   };
 
@@ -301,14 +313,14 @@ export function Canvas({
     const onKD = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         spaceRef.current = true;
-        if (svgRef.current) svgRef.current.style.cursor = "grab";
+        setIsSpaceDown(true);
       }
       if (e.key === "Escape") setAnchor(null);
     };
     const onKU = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         spaceRef.current = false;
-        if (svgRef.current) svgRef.current.style.cursor = "";
+        setIsSpaceDown(false);
       }
     };
     window.addEventListener("keydown", onKD);
@@ -353,7 +365,7 @@ export function Canvas({
       className="h-full w-full"
       style={{
         background: "var(--bg)",
-        cursor: panRef.current || spaceRef.current ? "grab" : tool === "select" ? "default" : "crosshair",
+        cursor: isPanning || isSpaceDown ? "grab" : tool === "select" ? "default" : "crosshair",
         touchAction: "none",
       }}
       onPointerDown={onPointerDown}
