@@ -38,8 +38,8 @@ const PALETTE = {
   bg: "var(--bg)",
   fg: "var(--text)",
   dim: "var(--dim)",
-  beam: "#e63946",
-  load: "#ffd100",
+  beam: "#111111",
+  load: "#dc2626",
   support: "#4aa3ff",
   reaction: "#a6ff5a",
   shear: "#ffd100",
@@ -795,7 +795,7 @@ export function Diagrams({
                 x2={frame.X(nodes[j][0])}
                 y2={frame.Y(nodes[j][1])}
                 stroke={PALETTE.beam}
-                strokeWidth={2.5}
+                strokeWidth={1.4}
                 strokeLinecap="round"
               />
             );
