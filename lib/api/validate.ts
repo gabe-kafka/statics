@@ -102,6 +102,47 @@ export function validate(req: SolveRequest): ApiError | null {
         `distLoads[${d}] references invalid member ${dl.member}.`,
         { field: `distLoads[${d}].member`, value: dl.member },
       );
+    if (!isFiniteNum(dl.wi) || !isFiniteNum(dl.wj))
+      return err("invalid_input", `distLoads[${d}] must have finite wi and wj.`, {
+        field: `distLoads[${d}]`,
+        value: dl,
+      });
+  }
+
+  for (let s = 0; s < (req.pointSprings ?? []).length; s++) {
+    const spring = req.pointSprings![s];
+    if (!Number.isInteger(spring.node) || spring.node < 0 || spring.node >= req.nodes.length)
+      return err(
+        "invalid_input",
+        `pointSprings[${s}] references invalid node ${spring.node}.`,
+        { field: `pointSprings[${s}].node`, value: spring.node },
+      );
+    if (
+      !isNonnegativeFinite(spring.Kx) ||
+      !isNonnegativeFinite(spring.Ky) ||
+      !isNonnegativeFinite(spring.Km)
+    )
+      return err(
+        "invalid_input",
+        `pointSprings[${s}] must have finite non-negative Kx, Ky, and Km.`,
+        { field: `pointSprings[${s}]`, value: spring },
+      );
+  }
+
+  for (let s = 0; s < (req.uniformSprings ?? []).length; s++) {
+    const spring = req.uniformSprings![s];
+    if (!Number.isInteger(spring.member) || spring.member < 0 || spring.member >= req.members.length)
+      return err(
+        "invalid_input",
+        `uniformSprings[${s}] references invalid member ${spring.member}.`,
+        { field: `uniformSprings[${s}].member`, value: spring.member },
+      );
+    if (!isNonnegativeFinite(spring.k))
+      return err(
+        "invalid_input",
+        `uniformSprings[${s}] must have finite non-negative k.`,
+        { field: `uniformSprings[${s}].k`, value: spring.k },
+      );
   }
 
   for (let h = 0; h < (req.hinges ?? []).length; h++) {
@@ -142,6 +183,23 @@ export function validate(req: SolveRequest): ApiError | null {
     if (sup.Ry) nRy++;
     if (sup.Rm) nRm++;
   }
+  for (const spring of req.pointSprings ?? []) {
+    if (spring.Kx > 0) nRx++;
+    if (spring.Ky > 0) nRy++;
+    if (spring.Km > 0) nRm++;
+  }
+  for (const spring of req.uniformSprings ?? []) {
+    if (spring.k <= 0) continue;
+    const member = req.members[spring.member];
+    const a = req.nodes[member.i];
+    const b = req.nodes[member.j];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const localYx = -(b[1] - a[1]) / L;
+    const localYy = (b[0] - a[0]) / L;
+    if (Math.abs(localYx) > 1e-9) nRx++;
+    if (Math.abs(localYy) > 1e-9) nRy++;
+    nRm++;
+  }
   const total = nRx + nRy + nRm;
   if (total < 3)
     return err(
@@ -151,6 +209,8 @@ export function validate(req: SolveRequest): ApiError | null {
         restrainedDOFs: total,
         minimum: 3,
         supports: req.supports,
+        pointSprings: req.pointSprings ?? [],
+        uniformSprings: req.uniformSprings ?? [],
       },
     );
   if (nRx === 0)
@@ -174,6 +234,15 @@ export function validate(req: SolveRequest): ApiError | null {
     adj[m.j].add(m.i);
   }
   const supported = new Set(req.supports.map((s) => s.node));
+  for (const spring of req.pointSprings ?? []) {
+    if (spring.Kx > 0 || spring.Ky > 0 || spring.Km > 0) supported.add(spring.node);
+  }
+  for (const spring of req.uniformSprings ?? []) {
+    if (spring.k <= 0) continue;
+    const member = req.members[spring.member];
+    supported.add(member.i);
+    supported.add(member.j);
+  }
   const visited = new Set<number>();
   const queue = [...supported];
   while (queue.length > 0) {
@@ -202,4 +271,8 @@ function err(code: ApiError["error"], message: string, details?: unknown): ApiEr
 
 function isFiniteNum(x: unknown): x is number {
   return typeof x === "number" && Number.isFinite(x);
+}
+
+function isNonnegativeFinite(x: unknown): x is number {
+  return isFiniteNum(x) && x >= 0;
 }

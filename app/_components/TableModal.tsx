@@ -342,6 +342,11 @@ function shiftReferenceCell(
 
 function isNodeReferenceCell(spec: InputSpec, ci: number): boolean {
   if (spec.key === "members") return ci === 0 || ci === 1;
-  if (spec.key === "pointLoads" || spec.key === "fixity") return ci === 0;
+  if (
+    spec.key === "pointLoads" ||
+    spec.key === "fixity" ||
+    spec.key === "pointSprings"
+  )
+    return ci === 0;
   return false;
 }

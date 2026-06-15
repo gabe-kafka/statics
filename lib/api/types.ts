@@ -8,6 +8,8 @@ export type SolveRequest = {
   supports: { node: number; Rx: boolean; Ry: boolean; Rm: boolean }[];
   pointLoads?: { node: number; Fx: number; Fy: number; M?: number }[];
   distLoads?: { member: number; wi: number; wj: number }[];
+  pointSprings?: { node: number; Kx: number; Ky: number; Km: number }[];
+  uniformSprings?: { member: number; k: number }[];
   hinges?: {
     /** Preferred explicit member index. */
     member?: number;

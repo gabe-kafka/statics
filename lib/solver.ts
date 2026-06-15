@@ -8,6 +8,8 @@ export type Member = [number, number];
 export type PointLoad = [node: number, Fx: number, Fy: number, M?: number];
 export type DistLoad = [member: number, wi: number, wj: number];
 export type Fixity = [node: number, Rx: number, Ry: number, Rm: number];
+export type PointSpring = [node: number, Kx: number, Ky: number, Km: number];
+export type UniformSpring = [member: number, k: number];
 export type MemberEndRelease = [member: number, end: "i" | "j"];
 
 export type SolveInput = {
@@ -16,6 +18,8 @@ export type SolveInput = {
   pointLoads: PointLoad[];
   distLoads: DistLoad[];
   fixity: Fixity[];
+  pointSprings?: PointSpring[];
+  uniformSprings?: UniformSpring[];
   EA?: number;
   EI?: number;
   memberProps?: { EA: number; EI: number }[];
@@ -67,6 +71,23 @@ function frame2dLocalK(EA: number, EI: number, L: number): number[][] {
     [0, -b, -c, 0, b, -c],
     [0, c, e, 0, -c, d],
   ];
+}
+
+function uniformTransverseSpringLocalK(k: number, L: number): number[][] {
+  const L2 = L * L;
+  const f = (k * L) / 420;
+  const v = [
+    [156, 22 * L, 54, -13 * L],
+    [22 * L, 4 * L2, 13 * L, -3 * L2],
+    [54, 13 * L, 156, -22 * L],
+    [-13 * L, -3 * L2, -22 * L, 4 * L2],
+  ];
+  const out = Array.from({ length: 6 }, () => new Array(6).fill(0));
+  const dofs = [1, 2, 4, 5];
+  for (let r = 0; r < dofs.length; r++)
+    for (let c = 0; c < dofs.length; c++)
+      out[dofs[r]][dofs[c]] = f * v[r][c];
+  return out;
 }
 
 function rotation6(c: number, s: number): number[][] {
@@ -163,6 +184,10 @@ function subtract(A: number[][], B: number[][]): number[][] {
   return A.map((row, r) => row.map((value, c) => value - B[r][c]));
 }
 
+function add(A: number[][], B: number[][]): number[][] {
+  return A.map((row, r) => row.map((value, c) => value + B[r][c]));
+}
+
 function subtractVec(a: number[], b: number[]): number[] {
   return a.map((value, idx) => value - b[idx]);
 }
@@ -241,6 +266,7 @@ export function solve(inp: SolveInput): Solution {
     s: number;
     T: number[][];
     kLocal: number[][];
+    springKLocal: number[][];
     feLocal: number[]; // fixed-end forces in local
     released: number[];
     qi: number; // local-y load at i
@@ -263,6 +289,11 @@ export function solve(inp: SolveInput): Solution {
     distByMember.set(m, [prev[0] + wi, prev[1] + wj]);
   }
 
+  const springByMember = new Map<number, number>();
+  for (const [m, k] of inp.uniformSprings ?? []) {
+    springByMember.set(m, (springByMember.get(m) ?? 0) + k);
+  }
+
   for (let mIdx = 0; mIdx < inp.members.length; mIdx++) {
     const [i, j] = inp.members[mIdx];
     if (!inp.nodes[i] || !inp.nodes[j]) continue;
@@ -275,12 +306,11 @@ export function solve(inp: SolveInput): Solution {
     const T = rotation6(c, s);
     const mEA = inp.memberProps?.[mIdx]?.EA ?? EA;
     const mEI = inp.memberProps?.[mIdx]?.EI ?? EI;
-    let kLocal = frame2dLocalK(mEA, mEI, L);
-    // global K contribution
-    const kG = matMul(matT(T), matMul(kLocal, T));
-    const dof = [3 * i, 3 * i + 1, 3 * i + 2, 3 * j, 3 * j + 1, 3 * j + 2];
-    for (let a = 0; a < 6; a++)
-      for (let b = 0; b < 6; b++) K[dof[a]][dof[b]] += kG[a][b];
+    const springKLocal = uniformTransverseSpringLocalK(
+      springByMember.get(mIdx) ?? 0,
+      L,
+    );
+    let kLocal = add(frame2dLocalK(mEA, mEI, L), springKLocal);
 
     // Distributed load (given along global -y); project to member-local y.
     // Global load density at any s along member is (0, -w_global(s)). Local y
@@ -294,6 +324,11 @@ export function solve(inp: SolveInput): Solution {
     const released = releasesByMember.get(mIdx) ?? [];
     const condensed = condenseReleasedRotations(kLocal, feL, released);
     kLocal = condensed.kLocal;
+    // global K contribution
+    const kG = matMul(matT(T), matMul(kLocal, T));
+    const dof = [3 * i, 3 * i + 1, 3 * i + 2, 3 * j, 3 * j + 1, 3 * j + 2];
+    for (let a = 0; a < 6; a++)
+      for (let b = 0; b < 6; b++) K[dof[a]][dof[b]] += kG[a][b];
     // feL is already the equivalent nodal load in local → add directly after
     // rotating to global.
     const feG = matVec(matT(T), condensed.feLocal);
@@ -307,6 +342,7 @@ export function solve(inp: SolveInput): Solution {
       s,
       T,
       kLocal,
+      springKLocal,
       feLocal: condensed.feLocal,
       released,
       qi,
@@ -323,6 +359,13 @@ export function solve(inp: SolveInput): Solution {
     F[3 * n + 2] += mz;
   }
 
+  for (const [n, kx, ky, km] of inp.pointSprings ?? []) {
+    if (!inp.nodes[n]) continue;
+    K[3 * n][3 * n] += kx;
+    K[3 * n + 1][3 * n + 1] += ky;
+    K[3 * n + 2][3 * n + 2] += km;
+  }
+
   // Boundary conditions: constrained DOFs
   const constrained = new Array(ndof).fill(false);
   for (const [n, rx, ry, rm] of inp.fixity) {
@@ -333,11 +376,17 @@ export function solve(inp: SolveInput): Solution {
   }
 
   // Partition
+  const inactive = new Array(ndof).fill(false);
+  for (let d = 0; d < ndof; d++) {
+    if (constrained[d]) continue;
+    const rowIsZero = K[d].every((value) => Math.abs(value) < 1e-12);
+    if (rowIsZero && Math.abs(F[d]) < 1e-12) inactive[d] = true;
+  }
   const free: number[] = [];
   const fixed: number[] = [];
   for (let d = 0; d < ndof; d++) {
     if (constrained[d]) fixed.push(d);
-    else free.push(d);
+    else if (!inactive[d]) free.push(d);
   }
 
   if (free.length === 0) {
@@ -370,15 +419,46 @@ export function solve(inp: SolveInput): Solution {
   // Reactions at constrained DOFs: R = K_full * u - F_applied (on fixed DOFs)
   const KxU = matVec(K, u);
   const reactionsByNode = new Map<number, { Rx: number; Ry: number; M: number }>();
+  const addReaction = (node: number, rx: number, ry: number, moment: number) => {
+    const r = reactionsByNode.get(node) ?? { Rx: 0, Ry: 0, M: 0 };
+    r.Rx += rx;
+    r.Ry += ry;
+    r.M += moment;
+    reactionsByNode.set(node, r);
+  };
   for (const d of fixed) {
     const n = Math.floor(d / 3);
     const comp = d % 3;
-    const r = reactionsByNode.get(n) ?? { Rx: 0, Ry: 0, M: 0 };
     const val = KxU[d] - F[d];
-    if (comp === 0) r.Rx = val;
-    else if (comp === 1) r.Ry = val;
-    else r.M = val;
-    reactionsByNode.set(n, r);
+    if (comp === 0) addReaction(n, val, 0, 0);
+    else if (comp === 1) addReaction(n, 0, val, 0);
+    else addReaction(n, 0, 0, val);
+  }
+  for (const [n, kx, ky, km] of inp.pointSprings ?? []) {
+    if (!inp.nodes[n]) continue;
+    const rx = -kx * u[3 * n];
+    const ry = -ky * u[3 * n + 1];
+    const moment = -km * u[3 * n + 2];
+    if (Math.abs(rx) + Math.abs(ry) + Math.abs(moment) > 1e-12)
+      addReaction(n, rx, ry, moment);
+  }
+  for (const m of mpre) {
+    const hasSpring = m.springKLocal.some((row) => row.some((v) => v !== 0));
+    if (!hasSpring) continue;
+    const dof = [
+      3 * m.i,
+      3 * m.i + 1,
+      3 * m.i + 2,
+      3 * m.j,
+      3 * m.j + 1,
+      3 * m.j + 2,
+    ];
+    const uG = dof.map((d) => u[d]);
+    const uL = matVec(m.T, uG);
+    const rLocal = matVec(m.springKLocal, uL).map((v) => -v);
+    const rGlobal = matVec(matT(m.T), rLocal);
+    addReaction(m.i, rGlobal[0], rGlobal[1], rGlobal[2]);
+    addReaction(m.j, rGlobal[3], rGlobal[4], rGlobal[5]);
   }
   const reactions = [...reactionsByNode.entries()].map(([node, v]) => ({
     node,

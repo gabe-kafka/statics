@@ -6,6 +6,8 @@ import type {
   Fixity,
   Member,
   PointLoad,
+  PointSpring,
+  UniformSpring,
   Vec2,
 } from "@/lib/solver";
 import type {
@@ -40,6 +42,8 @@ type Props = {
   members: Member[];
   pointLoads: PointLoad[];
   distLoads: DistLoad[];
+  pointSprings: PointSpring[];
+  uniformSprings: UniformSpring[];
   fixity: Fixity[];
   hinges: [number, "i" | "j"][];
   E: number;
@@ -62,6 +66,8 @@ export function Diagrams({
   members,
   pointLoads,
   distLoads,
+  pointSprings,
+  uniformSprings,
   fixity,
   hinges,
   E,
@@ -87,6 +93,12 @@ export function Diagrams({
         .filter(([, fx, fy]) => fx !== 0 || fy !== 0)
         .map(([node, Fx, Fy]) => ({ node, Fx, Fy })),
       distLoads: distLoads.map(([member, wi, wj]) => ({ member, wi, wj })),
+      pointSprings: pointSprings
+        .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)
+        .map(([node, Kx, Ky, Km]) => ({ node, Kx, Ky, Km })),
+      uniformSprings: uniformSprings
+        .filter(([, k]) => k !== 0)
+        .map(([member, k]) => ({ member, k })),
       hinges: hinges.map(([member, end]) => ({ member, end })),
       samplesPerMember: SAMPLES_PER_MEMBER,
       include: ["data"],
@@ -128,7 +140,19 @@ export function Diagrams({
       ctl.abort();
       clearTimeout(timer);
     };
-  }, [nodes, members, pointLoads, distLoads, fixity, hinges, E, I, A]);
+  }, [
+    nodes,
+    members,
+    pointLoads,
+    distLoads,
+    pointSprings,
+    uniformSprings,
+    fixity,
+    hinges,
+    E,
+    I,
+    A,
+  ]);
 
   const W = 880;
   const PAD = 48;

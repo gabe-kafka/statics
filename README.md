@@ -62,6 +62,16 @@ Use `hinges` for explicit member-end moment releases:
 { "hinges": [{ "member": 0, "end": "i" }, { "member": 0, "end": "j" }] }
 ```
 
+Use `pointSprings` for nodal ground springs and `uniformSprings` for
+member-local transverse foundation stiffness:
+
+```json
+{
+  "pointSprings": [{ "node": 1, "Kx": 0, "Ky": 100, "Km": 0 }],
+  "uniformSprings": [{ "member": 0, "k": 25 }]
+}
+```
+
 ### Sign convention
 
 World `+y` is up. Loads given in `+y`; downward loads are negative. Units pass through (kip / in / ksi works; the solver doesn't enforce them). Each member's `E`, `I`, and `A` are honored independently as `E·I` and `E·A`; mixed sections are supported.

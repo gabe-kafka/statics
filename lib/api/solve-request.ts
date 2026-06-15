@@ -28,6 +28,13 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
       distLoads: (body.distLoads ?? []).map(
         (d) => [d.member, d.wi, d.wj] as [number, number, number],
       ),
+      pointSprings: (body.pointSprings ?? []).map(
+        (s) =>
+          [s.node, s.Kx, s.Ky, s.Km] as [number, number, number, number],
+      ),
+      uniformSprings: (body.uniformSprings ?? []).map(
+        (s) => [s.member, s.k] as [number, number],
+      ),
       fixity: body.supports.map(
         (s) =>
           [s.node, s.Rx ? 1 : 0, s.Ry ? 1 : 0, s.Rm ? 1 : 0] as [

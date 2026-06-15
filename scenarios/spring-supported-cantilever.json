@@ -1,0 +1,16 @@
+{
+  "name": "spring-supported cantilever",
+  "request": {
+    "nodes": [
+      [0, 0],
+      [10, 0]
+    ],
+    "members": [{ "i": 0, "j": 1, "E": 29000, "I": 100, "A": 10 }],
+    "supports": [{ "node": 0, "Rx": true, "Ry": true, "Rm": true }],
+    "pointLoads": [{ "node": 1, "Fx": 0, "Fy": -10 }],
+    "pointSprings": [{ "node": 1, "Kx": 0, "Ky": 100, "Km": 0 }],
+    "uniformSprings": [{ "member": 0, "k": 25 }],
+    "samplesPerMember": 41,
+    "include": ["data"]
+  }
+}

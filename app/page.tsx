@@ -33,10 +33,16 @@ export default function Home() {
   const [activeExampleId, setActiveExampleId] = useState<string | null>(null);
   const autoLoadedRef = useRef(false);
 
-  const { nodes, members, fixity, pointLoads, distLoads, hinges } = useMemo(
-    () => parseFields(fields),
-    [fields],
-  );
+  const {
+    nodes,
+    members,
+    fixity,
+    pointLoads,
+    distLoads,
+    pointSprings,
+    uniformSprings,
+    hinges,
+  } = useMemo(() => parseFields(fields), [fields]);
 
   const fieldsRef = useRef(fields);
   const historyRef = useRef<{ past: Fields[]; future: Fields[] }>({
@@ -226,6 +232,8 @@ export default function Home() {
               members={members}
               pointLoads={pointLoads}
               distLoads={distLoads}
+              pointSprings={pointSprings}
+              uniformSprings={uniformSprings}
               fixity={fixity}
               hinges={hinges}
               E={E}

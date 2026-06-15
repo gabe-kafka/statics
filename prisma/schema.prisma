@@ -59,18 +59,20 @@ model VerificationToken {
 // ---- Domain ----
 
 model Design {
-  id         String   @id @default(cuid())
-  userId     String
-  name       String
-  nodes      String   @default("")
-  members    String   @default("")
-  pointLoads String   @default("")
-  distLoads  String   @default("")
-  fixity     String   @default("")
-  hinges     String   @default("")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  nodes          String   @default("")
+  members        String   @default("")
+  pointLoads     String   @default("")
+  distLoads      String   @default("")
+  fixity         String   @default("")
+  pointSprings   String   @default("")
+  uniformSprings String   @default("")
+  hinges         String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }

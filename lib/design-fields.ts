@@ -6,6 +6,8 @@ export type InputKey =
   | "pointLoads"
   | "distLoads"
   | "fixity"
+  | "pointSprings"
+  | "uniformSprings"
   | "hinges";
 
 export type InputSpec = {
@@ -22,6 +24,8 @@ export type ParsedDesignFields = {
   fixity: [number, number, number, number][];
   pointLoads: [number, number, number][];
   distLoads: [number, number, number][];
+  pointSprings: [number, number, number, number][];
+  uniformSprings: [number, number][];
   hinges: [number, "i" | "j"][];
 };
 
@@ -31,6 +35,8 @@ export const INPUTS: readonly InputSpec[] = [
   { key: "pointLoads", label: "POINT LOADS", columns: ["node", "Fx", "Fy"] },
   { key: "distLoads", label: "DIST LOADS", columns: ["member", "w_i", "w_j"] },
   { key: "fixity", label: "FIXITY", columns: ["node", "Rx", "Ry", "Rm"] },
+  { key: "pointSprings", label: "POINT SPRINGS", columns: ["node", "Kx", "Ky", "Km"] },
+  { key: "uniformSprings", label: "UNIFORM SPRINGS", columns: ["member", "k"] },
   { key: "hinges", label: "HINGES", columns: ["member", "end"] },
 ];
 
@@ -40,6 +46,8 @@ export const DEFAULT_FIELDS: Fields = {
   pointLoads: "(1, 0, -10)",
   distLoads: "(0, -2.98, -2.98)\n(1, -3.50, -5.64)",
   fixity: "(0, 1, 1, 0)\n(2, 0, 1, 0)",
+  pointSprings: "",
+  uniformSprings: "",
   hinges: "",
 };
 
@@ -111,6 +119,18 @@ export function parseFields(fields: Fields): ParsedDesignFields {
           number,
         ],
     ),
+    pointSprings: parseRows(fields.pointSprings).map(
+      (r) =>
+        [
+          Number(r[0]) || 0,
+          Number(r[1]) || 0,
+          Number(r[2]) || 0,
+          Number(r[3]) || 0,
+        ] as [number, number, number, number],
+    ),
+    uniformSprings: parseRows(fields.uniformSprings).map(
+      (r) => [Number(r[0]) || 0, Number(r[1]) || 0] as [number, number],
+    ),
     hinges: parseRows(fields.hinges).map(
       (r) => [Number(r[0]) || 0, r[1] === "j" ? "j" : "i"] as [number, "i" | "j"],
     ),
@@ -124,6 +144,8 @@ export function fieldsFromDesign(d: Partial<Fields>): Fields {
     pointLoads: d.pointLoads ?? "",
     distLoads: d.distLoads ?? "",
     fixity: d.fixity ?? "",
+    pointSprings: d.pointSprings ?? "",
+    uniformSprings: d.uniformSprings ?? "",
     hinges: d.hinges ?? "",
   };
 }

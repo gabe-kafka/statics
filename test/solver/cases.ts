@@ -38,6 +38,24 @@ export type SolverCase = {
 
 const EA = 29000 * 10;
 const EI = 29000 * 100;
+const cantileverL = 10;
+const cantileverP = 10;
+const tipSpringKy = 100;
+const tipSpringBeamKy = (3 * EI) / Math.pow(cantileverL, 3);
+const tipSpringDelta = -cantileverP / (tipSpringKy + tipSpringBeamKy);
+const tipSpringReaction = -tipSpringKy * tipSpringDelta;
+const tipSpringFixedReaction = cantileverP - tipSpringReaction;
+const tipSpringFixedMoment = cantileverP * cantileverL - tipSpringReaction * cantileverL;
+const foundationK = 100;
+const foundationF = (foundationK * cantileverL) / 420;
+const foundationKvv =
+  (12 * EI) / Math.pow(cantileverL, 3) + 156 * foundationF;
+const foundationKvt =
+  (-6 * EI) / Math.pow(cantileverL, 2) - 22 * cantileverL * foundationF;
+const foundationKtt =
+  (4 * EI) / cantileverL + 4 * cantileverL * cantileverL * foundationF;
+const foundationDet = foundationKvv * foundationKtt - foundationKvt * foundationKvt;
+const foundationTipDelta = (-cantileverP * foundationKtt) / foundationDet;
 
 const base = (input: Omit<SolveInput, "EA" | "EI">): SolveInput => ({
   ...input,
@@ -241,6 +259,44 @@ export const solverCases: SolverCase[] = [
         { member: 0, s: 0, V: 10, M: -100 },
         { member: 0, s: 10, V: 10, M: 0 },
       ],
+    },
+  },
+  {
+    name: "cantilever with tip point spring",
+    input: base({
+      nodes: [
+        [0, 0],
+        [cantileverL, 0],
+      ],
+      members: [[0, 1]],
+      fixity: [[0, 1, 1, 1]],
+      pointLoads: [[1, 0, -cantileverP]],
+      distLoads: [],
+      pointSprings: [[1, 0, tipSpringKy, 0]],
+    }),
+    expect: {
+      reactions: [
+        { node: 0, Ry: tipSpringFixedReaction, M: tipSpringFixedMoment },
+        { node: 1, Ry: tipSpringReaction },
+      ],
+      samples: [{ member: 0, s: cantileverL, delta: tipSpringDelta }],
+    },
+  },
+  {
+    name: "cantilever with uniform transverse spring foundation",
+    input: base({
+      nodes: [
+        [0, 0],
+        [cantileverL, 0],
+      ],
+      members: [[0, 1]],
+      fixity: [[0, 1, 1, 1]],
+      pointLoads: [[1, 0, -cantileverP]],
+      distLoads: [],
+      uniformSprings: [[0, foundationK]],
+    }),
+    expect: {
+      samples: [{ member: 0, s: cantileverL, delta: foundationTipDelta }],
     },
   },
   {

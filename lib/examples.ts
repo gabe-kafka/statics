@@ -1,6 +1,6 @@
 import type { SolveRequest } from "@/lib/api/types";
 import type { Fields } from "@/lib/design-fields";
-import { parseFields } from "@/lib/design-fields";
+import { fieldsFromDesign, parseFields } from "@/lib/design-fields";
 
 export type GalleryExample = {
   id: string;
@@ -17,8 +17,8 @@ const DEFAULT_E = 29000;
 const DEFAULT_I = 100;
 const DEFAULT_A = 10;
 
-function fields(input: Fields): Fields {
-  return input;
+function fields(input: Partial<Fields>): Fields {
+  return fieldsFromDesign(input);
 }
 
 export const GALLERY_EXAMPLES: readonly GalleryExample[] = [
@@ -116,7 +116,7 @@ export function solveRequestFromFields(
   A: number,
   include: SolveRequest["include"] = ["data", "svg"],
 ): SolveRequest {
-  const { nodes, members, fixity, pointLoads, distLoads } =
+  const { nodes, members, fixity, pointLoads, distLoads, pointSprings, uniformSprings } =
     parseFields(designFields);
 
   return {
@@ -132,6 +132,12 @@ export function solveRequestFromFields(
       .filter(([, fx, fy]) => fx !== 0 || fy !== 0)
       .map(([node, Fx, Fy]) => ({ node, Fx, Fy })),
     distLoads: distLoads.map(([member, wi, wj]) => ({ member, wi, wj })),
+    pointSprings: pointSprings
+      .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)
+      .map(([node, Kx, Ky, Km]) => ({ node, Kx, Ky, Km })),
+    uniformSprings: uniformSprings
+      .filter(([, k]) => k !== 0)
+      .map(([member, k]) => ({ member, k })),
     samplesPerMember: 41,
     include,
   };

@@ -44,6 +44,8 @@ const SPEC = {
                   { member: 0, wi: -2.98, wj: -2.98 },
                   { member: 1, wi: -3.5, wj: -5.64 },
                 ],
+                pointSprings: [{ node: 1, Kx: 0, Ky: 100, Km: 0 }],
+                uniformSprings: [{ member: 0, k: 5 }],
                 samplesPerMember: 40,
                 include: ["data"],
               },
@@ -153,6 +155,34 @@ const SPEC = {
                 member: { type: "integer" },
                 wi: { type: "number", description: "intensity at member start" },
                 wj: { type: "number", description: "intensity at member end" },
+              },
+            },
+          },
+          pointSprings: {
+            type: "array",
+            description:
+              "Nodal spring stiffnesses in global x, global y, and rotation.",
+            items: {
+              type: "object",
+              required: ["node", "Kx", "Ky", "Km"],
+              properties: {
+                node: { type: "integer" },
+                Kx: { type: "number", minimum: 0 },
+                Ky: { type: "number", minimum: 0 },
+                Km: { type: "number", minimum: 0 },
+              },
+            },
+          },
+          uniformSprings: {
+            type: "array",
+            description:
+              "Uniform transverse member-foundation stiffness along member local y.",
+            items: {
+              type: "object",
+              required: ["member", "k"],
+              properties: {
+                member: { type: "integer" },
+                k: { type: "number", minimum: 0 },
               },
             },
           },

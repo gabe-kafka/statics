@@ -28,6 +28,8 @@ export async function POST(req: Request) {
     pointLoads?: string;
     distLoads?: string;
     fixity?: string;
+    pointSprings?: string;
+    uniformSprings?: string;
     hinges?: string;
   };
   if (!body.name?.trim()) {
@@ -41,6 +43,8 @@ export async function POST(req: Request) {
     pointLoads: body.pointLoads ?? "",
     distLoads: body.distLoads ?? "",
     fixity: body.fixity ?? "",
+    pointSprings: body.pointSprings ?? "",
+    uniformSprings: body.uniformSprings ?? "",
     hinges: body.hinges ?? "",
   };
 
