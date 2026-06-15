@@ -233,6 +233,16 @@ export function Diagrams({
   const samples: Sample[] = [];
   const reactions: ReactionOut[] =
     state.kind === "ok" ? state.data.reactions : [];
+  const pointReactionNodes = new Set<number>();
+  fixity.forEach(([node, rx, ry, rm]) => {
+    if (rx || ry || rm) pointReactionNodes.add(node);
+  });
+  pointSprings.forEach(([node, kx, ky, km]) => {
+    if (kx !== 0 || ky !== 0 || km !== 0) pointReactionNodes.add(node);
+  });
+  const pointReactions = reactions.filter((reaction) =>
+    pointReactionNodes.has(reaction.node),
+  );
   if (state.kind === "ok") {
     state.data.members.forEach((mr, idx) => {
       const station0 = idx === 0 ? 0 : stationEnds[idx - 1];
@@ -587,9 +597,9 @@ export function Diagrams({
   const reactionEls: React.ReactElement[] = [];
   const Rmax = Math.max(
     1,
-    ...reactions.map((r) => Math.max(Math.abs(r.Rx), Math.abs(r.Ry))),
+    ...pointReactions.map((r) => Math.max(Math.abs(r.Rx), Math.abs(r.Ry))),
   );
-  reactions.forEach((r, k) => {
+  pointReactions.forEach((r, k) => {
     if (!nodes[r.node]) return;
     const cx = frame.X(nodes[r.node][0]);
     const cy = frame.Y(nodes[r.node][1]) + 30;
@@ -726,11 +736,11 @@ export function Diagrams({
       style={{ background: PALETTE.bg, color: PALETTE.fg }}
     >
       <ApiStatusPill state={state} />
-      {(equilibrium || peaks || reactions.length > 0) && (
+      {(equilibrium || peaks || pointReactions.length > 0) && (
         <CorrectnessPanel
           equilibrium={equilibrium}
           peaks={peaks}
-          reactions={reactions}
+          reactions={pointReactions}
         />
       )}
       <svg
