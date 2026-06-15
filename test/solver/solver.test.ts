@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { solve } from "../../lib/solver";
 import { combineLoads } from "../../lib/load-combinations";
+import { coerceAiDesignResult } from "../../lib/ai-design";
+import { DEFAULT_FIELDS } from "../../lib/design-fields";
 import { solverCases } from "./cases";
 import { assertCase } from "./helpers";
 
@@ -40,4 +42,27 @@ test("load combinations scale load rows by case", () => {
     [0, -2.4, -2.4],
     [1, -1.6, -4.800000000000001],
   ]);
+});
+
+test("AI design output coercion requires full design fields", () => {
+  const result = coerceAiDesignResult({
+    reply: "Created a 44 ft beam.",
+    E: 29000,
+    I: 100,
+    fields: {
+      ...DEFAULT_FIELDS,
+      nodes: "(0, 0)\n(44, 0)",
+      members: "(0, 1)",
+    },
+  });
+
+  assert.equal(result.fields.nodes, "(0, 0)\n(44, 0)");
+  assert.throws(() =>
+    coerceAiDesignResult({
+      reply: "bad",
+      E: 29000,
+      I: 100,
+      fields: { nodes: "(0, 0)" },
+    }),
+  );
 });

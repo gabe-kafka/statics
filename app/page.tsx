@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { AiDesignChat } from "./_components/AiDesignChat";
 import { Diagrams } from "./_components/Diagrams";
 import { ExampleGallery } from "./_components/ExampleGallery";
 import { TableModal } from "./_components/TableModal";
@@ -21,6 +22,8 @@ export default function Home() {
   const { data: session, status } = useSession();
   const signedIn = !!session?.user;
   const email = session?.user?.email ?? "";
+  const userKey =
+    (session?.user as { id?: string } | undefined)?.id ?? email;
 
   const [designId, setDesignId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -230,6 +233,21 @@ export default function Home() {
         examples={GALLERY_EXAMPLES}
         activeId={activeExampleId}
         onLoad={loadExample}
+      />
+
+      <AiDesignChat
+        key={userKey || "signed-out"}
+        signedIn={signedIn}
+        authStatus={status}
+        fields={fields}
+        E={E}
+        I={I}
+        onApply={(proposal) => {
+          setFields(proposal.fields);
+          setE(proposal.E);
+          setI(proposal.I);
+          setActiveExampleId(null);
+        }}
       />
 
       <div className="flex flex-1 overflow-hidden">
