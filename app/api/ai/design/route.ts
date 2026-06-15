@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { getSavedAiApiKey } from "@/lib/ai-api-key-store";
 import { generateDesignUpdate, type AiDesignRequest } from "@/lib/ai-design";
 
 export const runtime = "nodejs";
@@ -31,12 +32,12 @@ export async function POST(req: Request) {
     }
 
     const session = await auth();
-    const userKey = signedInUserKey(session);
-    if (!userKey) {
+    const userId = signedInUserId(session);
+    if (!userId) {
       return jsonError("Sign in to use BYOK AI.", 401, "unauthorized");
     }
 
-    const rateLimit = checkRateLimit(userKey);
+    const rateLimit = checkRateLimit(userId);
     if (!rateLimit.allowed) {
       return jsonError(
         `Too many AI requests. Try again in ${rateLimit.retryAfterSeconds}s.`,
@@ -51,7 +52,9 @@ export async function POST(req: Request) {
       return jsonError("Request is too large.", 413);
     }
     const body = JSON.parse(text) as AiDesignRequest;
-    const result = await generateDesignUpdate(body);
+    const result = await generateDesignUpdate(
+      await resolveAiApiKey(body, userId),
+    );
     return NextResponse.json(
       { ok: true, ...result },
       { headers: NO_STORE_HEADERS },
@@ -64,11 +67,34 @@ export async function POST(req: Request) {
   }
 }
 
-function signedInUserKey(
+function signedInUserId(
   session: { user?: { id?: string; email?: string | null } } | null,
 ): string {
-  const user = session?.user;
-  return user?.id ?? user?.email ?? "";
+  return session?.user?.id ?? "";
+}
+
+async function resolveAiApiKey(
+  body: AiDesignRequest,
+  userId: string,
+): Promise<AiDesignRequest> {
+  if (typeof body.apiKey === "string" && body.apiKey.trim()) {
+    return body;
+  }
+  if (!body.useSavedKey) return body;
+
+  const saved = await getSavedAiApiKey(userId);
+  if (!saved) {
+    throw new Error("No saved OpenAI API key. Add AI API key in the top right.");
+  }
+  if (body.provider !== saved.provider) {
+    throw new Error("Saved API key is for OpenAI. Switch provider to OpenAI.");
+  }
+
+  return {
+    ...body,
+    apiKey: saved.apiKey,
+    model: body.model || saved.model || undefined,
+  };
 }
 
 function checkRateLimit(userKey: string):

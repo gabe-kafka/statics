@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import { signIn, signOut } from "next-auth/react";
 
@@ -14,8 +15,12 @@ export function TopBar({
   authStatus,
   email,
   aiApiKey,
+  hasSavedAiApiKey,
+  aiKeyBusy,
   designs,
   onAiApiKeyChange,
+  onSaveAiApiKey,
+  onDeleteSavedAiApiKey,
   onSave,
   onNew,
   onLoad,
@@ -28,16 +33,28 @@ export function TopBar({
   authStatus: string;
   email: string;
   aiApiKey: string;
+  hasSavedAiApiKey: boolean;
+  aiKeyBusy: boolean;
   designs: DesignRow[];
   onAiApiKeyChange: (value: string) => void;
+  onSaveAiApiKey: () => void;
+  onDeleteSavedAiApiKey: () => void;
   onSave: () => void;
   onNew: () => void;
   onLoad: (id: string) => void;
 }) {
-  const needsAiKey = signedIn && aiApiKey.trim().length === 0;
+  const [aiKeyOpen, setAiKeyOpen] = useState(false);
+  const needsAiKey =
+    signedIn && !hasSavedAiApiKey && aiApiKey.trim().length === 0;
+  const transientReady = aiApiKey.trim().length > 0;
+  const aiKeyState = hasSavedAiApiKey
+    ? "SAVED"
+    : transientReady
+      ? "READY"
+      : "NEEDED";
 
   return (
-    <div className="flex h-9 items-stretch border-b border-border text-[10px]">
+    <div className="relative flex h-9 items-stretch border-b border-border text-[10px]">
       <div className="flex items-center gap-2 border-r border-border px-3">
         <Image src="/logo.png" alt="GK" width={90} height={24} priority />
         <span className="font-medium uppercase tracking-[0.12em] text-muted">
@@ -104,33 +121,84 @@ export function TopBar({
           <span className="uppercase text-dim">...</span>
         ) : signedIn ? (
           <>
-            <label className="flex items-center gap-1">
-              <span
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAiKeyOpen((open) => !open)}
                 className={
                   needsAiKey
-                    ? "uppercase tracking-[0.08em] text-accent"
-                    : "uppercase tracking-[0.08em] text-muted"
+                    ? "h-6 border border-accent bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-accent"
+                    : "h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:border-accent hover:text-text"
                 }
+                title="Open BYOK vault"
               >
-                AI KEY
-              </span>
-              <input
-                type="password"
-                value={aiApiKey}
-                onChange={(e) => onAiApiKeyChange(e.target.value)}
-                placeholder="OpenAI key"
-                autoComplete="new-password"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className={
-                  needsAiKey
-                    ? "h-6 w-36 border border-accent bg-surface px-2 font-mono text-[10px] text-text placeholder:text-dim focus:outline-none"
-                    : "h-6 w-36 border border-border bg-surface px-2 font-mono text-[10px] text-text placeholder:text-dim focus:border-accent focus:outline-none"
-                }
-                title="AI API key. Stored only in this browser tab until refresh or sign-out."
-              />
-            </label>
+                AI KEY{" "}
+                <span className={hasSavedAiApiKey ? "text-green" : ""}>
+                  {aiKeyState}
+                </span>
+              </button>
+              {aiKeyOpen && (
+                <div className="absolute right-0 top-8 z-50 w-80 border border-border bg-bg p-3 shadow-xl">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
+                      BYOK VAULT
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAiKeyOpen(false)}
+                      className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:border-accent hover:text-text"
+                    >
+                      CLOSE
+                    </button>
+                  </div>
+                  <div className="mb-2 text-[9px] uppercase tracking-[0.08em] text-dim">
+                    Encrypted at rest. Never shown again. Only this signed-in
+                    account can use it.
+                  </div>
+                  <input
+                    type="password"
+                    value={aiApiKey}
+                    onChange={(e) => onAiApiKeyChange(e.target.value)}
+                    placeholder={
+                      hasSavedAiApiKey
+                        ? "paste to replace saved OpenAI key"
+                        : "OpenAI API key"
+                    }
+                    autoComplete="new-password"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="mb-2 h-7 w-full border border-border bg-surface px-2 font-mono text-[10px] text-text placeholder:text-dim focus:border-accent focus:outline-none"
+                    title="OpenAI API key"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={onSaveAiApiKey}
+                      disabled={!aiApiKey.trim() || aiKeyBusy}
+                      className="h-7 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:border-accent hover:text-text disabled:opacity-40"
+                    >
+                      {aiKeyBusy ? "SAVING" : "SAVE ENCRYPTED"}
+                    </button>
+                    {hasSavedAiApiKey && (
+                      <button
+                        type="button"
+                        onClick={onDeleteSavedAiApiKey}
+                        disabled={aiKeyBusy}
+                        className="h-7 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:border-red hover:text-red disabled:opacity-40"
+                      >
+                        DELETE
+                      </button>
+                    )}
+                    {hasSavedAiApiKey && !aiApiKey.trim() && (
+                      <span className="ml-auto text-[9px] uppercase tracking-[0.08em] text-green">
+                        SAVED
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <span className="text-muted">{email}</span>
             <button
               type="button"

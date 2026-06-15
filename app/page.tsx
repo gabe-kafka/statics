@@ -34,6 +34,8 @@ export default function Home() {
   const [E, setE] = useState(29000);
   const [I, setI] = useState(100);
   const [aiApiKeyState, setAiApiKeyState] = useState({ owner: "", value: "" });
+  const [hasSavedAiApiKey, setHasSavedAiApiKey] = useState(false);
+  const [aiKeyBusy, setAiKeyBusy] = useState(false);
   const [activeExampleId, setActiveExampleId] = useState<string | null>(null);
   const autoLoadedRef = useRef(false);
   const aiApiKey =
@@ -139,6 +141,24 @@ export default function Home() {
     refreshList();
   }, [refreshList]);
 
+  const refreshAiKeyStatus = useCallback(async () => {
+    if (!signedIn) {
+      setHasSavedAiApiKey(false);
+      return;
+    }
+    const r = await fetch("/api/ai/key", { cache: "no-store" });
+    if (r.ok) {
+      const data = (await r.json()) as { hasKey?: boolean };
+      setHasSavedAiApiKey(!!data.hasKey);
+    }
+  }, [signedIn]);
+
+  useEffect(() => {
+    // Synchronizes saved BYOK status without exposing the saved key.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refreshAiKeyStatus();
+  }, [refreshAiKeyStatus]);
+
   useEffect(() => {
     if (!signedIn) autoLoadedRef.current = false;
   }, [signedIn]);
@@ -147,6 +167,45 @@ export default function Home() {
     (value: string) => setAiApiKeyState({ owner: userKey, value }),
     [userKey],
   );
+
+  const saveAiApiKey = useCallback(async () => {
+    const apiKey = aiApiKey.trim();
+    if (!signedIn || !apiKey || aiKeyBusy) return;
+    setAiKeyBusy(true);
+    try {
+      const r = await fetch("/api/ai/key", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "openai", apiKey }),
+      });
+      const data = (await r.json()) as { hasKey?: boolean; message?: string };
+      if (!r.ok) {
+        window.alert(data.message ?? "Could not save AI API key.");
+        return;
+      }
+      setHasSavedAiApiKey(!!data.hasKey);
+      setCurrentAiApiKey("");
+    } finally {
+      setAiKeyBusy(false);
+    }
+  }, [aiApiKey, aiKeyBusy, setCurrentAiApiKey, signedIn]);
+
+  const deleteSavedAiApiKey = useCallback(async () => {
+    if (!signedIn || aiKeyBusy) return;
+    setAiKeyBusy(true);
+    try {
+      const r = await fetch("/api/ai/key", { method: "DELETE" });
+      const data = (await r.json()) as { hasKey?: boolean; message?: string };
+      if (!r.ok) {
+        window.alert(data.message ?? "Could not delete AI API key.");
+        return;
+      }
+      setHasSavedAiApiKey(!!data.hasKey);
+      setCurrentAiApiKey("");
+    } finally {
+      setAiKeyBusy(false);
+    }
+  }, [aiKeyBusy, setCurrentAiApiKey, signedIn]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -232,8 +291,12 @@ export default function Home() {
         authStatus={status}
         email={email}
         aiApiKey={aiApiKey}
+        hasSavedAiApiKey={hasSavedAiApiKey}
+        aiKeyBusy={aiKeyBusy}
         designs={list}
         onAiApiKeyChange={setCurrentAiApiKey}
+        onSaveAiApiKey={saveAiApiKey}
+        onDeleteSavedAiApiKey={deleteSavedAiApiKey}
         onSave={save}
         onNew={newDesign}
         onLoad={load}
@@ -250,6 +313,7 @@ export default function Home() {
         signedIn={signedIn}
         authStatus={status}
         apiKey={aiApiKey}
+        hasSavedApiKey={hasSavedAiApiKey}
         fields={fields}
         E={E}
         I={I}

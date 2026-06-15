@@ -21,6 +21,7 @@ export function AiDesignChat({
   signedIn,
   authStatus,
   apiKey,
+  hasSavedApiKey,
   fields,
   E,
   I,
@@ -29,6 +30,7 @@ export function AiDesignChat({
   signedIn: boolean;
   authStatus: string;
   apiKey: string;
+  hasSavedApiKey: boolean;
   fields: Fields;
   E: number;
   I: number;
@@ -41,17 +43,19 @@ export function AiDesignChat({
   const [error, setError] = useState("");
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const hasApiKey = apiKey.trim().length > 0;
+  const canUseSavedKey = hasSavedApiKey && provider === "openai";
+  const keyReady = hasApiKey || canUseSavedKey;
 
   const canSubmit = useMemo(
     () =>
       signedIn &&
-      hasApiKey &&
+      keyReady &&
       prompt.trim().length > 0 &&
       !busy,
-    [signedIn, hasApiKey, prompt, busy],
+    [signedIn, keyReady, prompt, busy],
   );
   const authLoading = authStatus === "loading";
-  const disabled = !signedIn || authLoading || !hasApiKey || busy;
+  const disabled = !signedIn || authLoading || !keyReady || busy;
 
   const chooseProvider = (next: AiProvider) => {
     setProvider(next);
@@ -71,6 +75,7 @@ export function AiDesignChat({
           provider,
           model,
           apiKey,
+          useSavedKey: !hasApiKey && canUseSavedKey,
           prompt,
           fields,
           E,
@@ -105,7 +110,13 @@ export function AiDesignChat({
             AI EDITOR
           </span>
           <span className="text-dim">
-            {!signedIn ? "SIGN IN" : hasApiKey ? "BYOK" : "ADD KEY TOP RIGHT"}
+            {!signedIn
+              ? "SIGN IN"
+              : hasApiKey
+                ? "BYOK"
+                : canUseSavedKey
+                  ? "SAVED KEY"
+                  : "ADD KEY TOP RIGHT"}
           </span>
         </div>
 
@@ -134,7 +145,11 @@ export function AiDesignChat({
             {signedIn
               ? hasApiKey
                 ? "Key is sent through this server once and not saved."
-                : "Add AI API key in the top right."
+                : canUseSavedKey
+                  ? "Using saved OpenAI key. Plaintext is not returned to browser."
+                  : hasSavedApiKey
+                    ? "Saved key is OpenAI. Switch provider or paste a key."
+                    : "Add AI API key in the top right."
               : "Sign in with Google, then add AI API key in the top right."}
           </div>
           <textarea
@@ -152,12 +167,12 @@ export function AiDesignChat({
             type="button"
             onClick={signedIn ? submit : () => signIn("google")}
             disabled={signedIn ? !canSubmit : authLoading}
-            title={signedIn && !hasApiKey ? "Add AI API key in the top right" : undefined}
+            title={signedIn && !keyReady ? "Add AI API key in the top right" : undefined}
             className="h-7 border border-border bg-surface px-2 uppercase tracking-[0.08em] text-muted hover:border-accent hover:text-text disabled:opacity-40"
           >
             {!signedIn
               ? "SIGN IN"
-              : !hasApiKey
+              : !keyReady
                 ? "ADD KEY"
                 : busy
                   ? "THINKING"

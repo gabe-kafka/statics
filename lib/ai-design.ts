@@ -5,7 +5,8 @@ export type AiProvider = "openai" | "anthropic";
 export type AiDesignRequest = {
   provider: AiProvider;
   model?: string;
-  apiKey: string;
+  apiKey?: string;
+  useSavedKey?: boolean;
   prompt: string;
   fields: Fields;
   E: number;
@@ -53,7 +54,7 @@ export async function generateDesignUpdate(
   req: AiDesignRequest,
 ): Promise<AiDesignResult> {
   const provider = validateProvider(req.provider);
-  const apiKey = req.apiKey.trim();
+  const apiKey = typeof req.apiKey === "string" ? req.apiKey.trim() : "";
   const prompt = req.prompt.trim();
 
   if (!apiKey) throw new Error("Missing API key.");

@@ -5,6 +5,7 @@ import { solveRequest } from "../../lib/api/solve-request";
 import { combineLoads } from "../../lib/load-combinations";
 import { coerceAiDesignResult } from "../../lib/ai-design";
 import { DEFAULT_FIELDS } from "../../lib/design-fields";
+import { decryptSecret, encryptSecret } from "../../lib/secret-crypto";
 import { solverCases } from "./cases";
 import { assertCase } from "./helpers";
 
@@ -99,4 +100,14 @@ test("AI design output coercion requires full design fields", () => {
       fields: { nodes: "(0, 0)" },
     }),
   );
+});
+
+test("saved API key encryption does not reveal plaintext and is user-bound", () => {
+  process.env.AI_API_KEY_ENCRYPTION_SECRET =
+    "test encryption secret with at least thirty two chars";
+
+  const encrypted = encryptSecret("sk-test-key", "user-a");
+  assert.ok(!encrypted.includes("sk-test-key"));
+  assert.equal(decryptSecret(encrypted, "user-a"), "sk-test-key");
+  assert.throws(() => decryptSecret(encrypted, "user-b"));
 });

@@ -20,6 +20,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   designs       Design[]
+  aiApiKey      AiApiKey?
 }
 
 model Account {
@@ -75,6 +76,19 @@ model Design {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AiApiKey {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  provider     String   @default("openai")
+  model        String?
+  encryptedKey String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
