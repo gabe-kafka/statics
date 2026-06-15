@@ -20,6 +20,7 @@ const DEFAULT_MODELS: Record<AiProvider, string> = {
 export function AiDesignChat({
   signedIn,
   authStatus,
+  apiKey,
   fields,
   E,
   I,
@@ -27,6 +28,7 @@ export function AiDesignChat({
 }: {
   signedIn: boolean;
   authStatus: string;
+  apiKey: string;
   fields: Fields;
   E: number;
   I: number;
@@ -34,22 +36,22 @@ export function AiDesignChat({
 }) {
   const [provider, setProvider] = useState<AiProvider>("openai");
   const [model, setModel] = useState(DEFAULT_MODELS.openai);
-  const [apiKey, setApiKey] = useState("");
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [proposal, setProposal] = useState<Proposal | null>(null);
+  const hasApiKey = apiKey.trim().length > 0;
 
   const canSubmit = useMemo(
     () =>
       signedIn &&
-      apiKey.trim().length > 0 &&
+      hasApiKey &&
       prompt.trim().length > 0 &&
       !busy,
-    [signedIn, apiKey, prompt, busy],
+    [signedIn, hasApiKey, prompt, busy],
   );
   const authLoading = authStatus === "loading";
-  const disabled = !signedIn || authLoading || busy;
+  const disabled = !signedIn || authLoading || !hasApiKey || busy;
 
   const chooseProvider = (next: AiProvider) => {
     setProvider(next);
@@ -103,12 +105,12 @@ export function AiDesignChat({
             AI EDITOR
           </span>
           <span className="text-dim">
-            {signedIn ? "BYOK" : "SIGN IN"}
+            {!signedIn ? "SIGN IN" : hasApiKey ? "BYOK" : "ADD KEY TOP RIGHT"}
           </span>
         </div>
 
         <div className="grid min-w-0 gap-2">
-          <div className="grid gap-2 sm:grid-cols-[120px_minmax(120px,180px)_minmax(160px,1fr)]">
+          <div className="grid gap-2 sm:grid-cols-[120px_minmax(120px,180px)]">
             <select
               value={provider}
               onChange={(e) => chooseProvider(e.target.value as AiProvider)}
@@ -127,22 +129,13 @@ export function AiDesignChat({
               spellCheck={false}
               title="model"
             />
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              disabled={disabled}
-              className="h-7 border border-border bg-surface px-2 text-text outline-none focus:border-accent"
-              placeholder="API key"
-              autoComplete="new-password"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              title="API key"
-            />
           </div>
           <div className="text-[9px] uppercase tracking-[0.08em] text-dim">
-            Signed-in only. Key is sent through this server once and not saved.
+            {signedIn
+              ? hasApiKey
+                ? "Key is sent through this server once and not saved."
+                : "Add AI API key in the top right."
+              : "Sign in with Google, then add AI API key in the top right."}
           </div>
           <textarea
             value={prompt}
@@ -159,9 +152,16 @@ export function AiDesignChat({
             type="button"
             onClick={signedIn ? submit : () => signIn("google")}
             disabled={signedIn ? !canSubmit : authLoading}
+            title={signedIn && !hasApiKey ? "Add AI API key in the top right" : undefined}
             className="h-7 border border-border bg-surface px-2 uppercase tracking-[0.08em] text-muted hover:border-accent hover:text-text disabled:opacity-40"
           >
-            {!signedIn ? "SIGN IN" : busy ? "THINKING" : "GENERATE"}
+            {!signedIn
+              ? "SIGN IN"
+              : !hasApiKey
+                ? "ADD KEY"
+                : busy
+                  ? "THINKING"
+                  : "GENERATE"}
           </button>
           <button
             type="button"

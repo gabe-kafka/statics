@@ -7,35 +7,37 @@ import type {
   SolveRequest,
   SolveResponse,
 } from "./types";
+import { normalizeInlineMemberNodes } from "./normalize-inline-nodes";
 import { renderSvg } from "./render-svg";
 import { validate } from "./validate";
 
 export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
-  const v = validate(body);
+  const normalizedBody = normalizeInlineMemberNodes(body);
+  const v = validate(normalizedBody);
   if (v) return v;
 
-  const samplesPerMember = clampSamples(body.samplesPerMember ?? 40);
-  const include = new Set(body.include ?? ["data"]);
+  const samplesPerMember = clampSamples(normalizedBody.samplesPerMember ?? 40);
+  const include = new Set(normalizedBody.include ?? ["data"]);
 
   let raw: Solution;
   try {
     raw = solveFrame({
-      nodes: body.nodes.map((n) => [n[0], n[1]] as [number, number]),
-      members: body.members.map((m) => [m.i, m.j] as [number, number]),
-      pointLoads: (body.pointLoads ?? []).map(
+      nodes: normalizedBody.nodes.map((n) => [n[0], n[1]] as [number, number]),
+      members: normalizedBody.members.map((m) => [m.i, m.j] as [number, number]),
+      pointLoads: (normalizedBody.pointLoads ?? []).map(
         (p) => [p.node, p.Fx, p.Fy, p.M ?? 0] as [number, number, number, number],
       ),
-      distLoads: (body.distLoads ?? []).map(
+      distLoads: (normalizedBody.distLoads ?? []).map(
         (d) => [d.member, d.wi, d.wj] as [number, number, number],
       ),
-      pointSprings: (body.pointSprings ?? []).map(
+      pointSprings: (normalizedBody.pointSprings ?? []).map(
         (s) =>
           [s.node, s.Kx, s.Ky, s.Km] as [number, number, number, number],
       ),
-      uniformSprings: (body.uniformSprings ?? []).map(
+      uniformSprings: (normalizedBody.uniformSprings ?? []).map(
         (s) => [s.member, s.k] as [number, number],
       ),
-      fixity: body.supports.map(
+      fixity: normalizedBody.supports.map(
         (s) =>
           [s.node, s.Rx ? 1 : 0, s.Ry ? 1 : 0, s.Rm ? 1 : 0] as [
             number,
@@ -44,11 +46,11 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
             number,
           ],
       ),
-      memberProps: body.members.map((m) => ({
+      memberProps: normalizedBody.members.map((m) => ({
         EA: m.E * m.A,
         EI: m.E * m.I,
       })),
-      releases: normalizeHinges(body),
+      releases: normalizeHinges(normalizedBody),
     });
   } catch (e) {
     return {
@@ -71,11 +73,11 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
   }
 
   const memberOut: MemberOut[] = raw.members.map((mr, idx) => {
-    const [i, j] = [body.members[idx].i, body.members[idx].j];
-    const xi = body.nodes[i][0];
-    const yi = body.nodes[i][1];
-    const xj = body.nodes[j][0];
-    const yj = body.nodes[j][1];
+    const [i, j] = [normalizedBody.members[idx].i, normalizedBody.members[idx].j];
+    const xi = normalizedBody.nodes[i][0];
+    const yi = normalizedBody.nodes[i][1];
+    const xj = normalizedBody.nodes[j][0];
+    const yj = normalizedBody.nodes[j][1];
     const samples: SampleOut[] = [];
     for (let k = 0; k <= samplesPerMember; k++) {
       const s = (k / samplesPerMember) * mr.L;
@@ -124,7 +126,7 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
   };
 
   if (include.has("svg")) {
-    response.svg = renderSvg(body, { members: memberOut, reactions });
+    response.svg = renderSvg(normalizedBody, { members: memberOut, reactions });
   }
 
   return response;

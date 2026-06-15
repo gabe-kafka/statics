@@ -33,8 +33,11 @@ export default function Home() {
   const [openKey, setOpenKey] = useState<InputKey | null>(null);
   const [E, setE] = useState(29000);
   const [I, setI] = useState(100);
+  const [aiApiKeyState, setAiApiKeyState] = useState({ owner: "", value: "" });
   const [activeExampleId, setActiveExampleId] = useState<string | null>(null);
   const autoLoadedRef = useRef(false);
+  const aiApiKey =
+    signedIn && aiApiKeyState.owner === userKey ? aiApiKeyState.value : "";
 
   const {
     nodes,
@@ -140,6 +143,11 @@ export default function Home() {
     if (!signedIn) autoLoadedRef.current = false;
   }, [signedIn]);
 
+  const setCurrentAiApiKey = useCallback(
+    (value: string) => setAiApiKeyState({ owner: userKey, value }),
+    [userKey],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -223,7 +231,9 @@ export default function Home() {
         signedIn={signedIn}
         authStatus={status}
         email={email}
+        aiApiKey={aiApiKey}
         designs={list}
+        onAiApiKeyChange={setCurrentAiApiKey}
         onSave={save}
         onNew={newDesign}
         onLoad={load}
@@ -239,6 +249,7 @@ export default function Home() {
         key={userKey || "signed-out"}
         signedIn={signedIn}
         authStatus={status}
+        apiKey={aiApiKey}
         fields={fields}
         E={E}
         I={I}

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { solve } from "../../lib/solver";
+import { solveRequest } from "../../lib/api/solve-request";
 import { combineLoads } from "../../lib/load-combinations";
 import { coerceAiDesignResult } from "../../lib/ai-design";
 import { DEFAULT_FIELDS } from "../../lib/design-fields";
@@ -42,6 +43,39 @@ test("load combinations scale load rows by case", () => {
     [0, -2.4, -2.4],
     [1, -1.6, -4.800000000000001],
   ]);
+});
+
+test("API solve auto-splits members at inline nodes for point loads and moments", () => {
+  const result = solveRequest({
+    nodes: [
+      [0, 0],
+      [44, 0],
+      [35.5, 0],
+      [25, 0],
+      [8.5, 0],
+    ],
+    members: [{ i: 0, j: 1, E: 29000, I: 100, A: 10 }],
+    supports: [{ node: 0, Rx: true, Ry: false, Rm: false }],
+    pointLoads: [{ node: 3, Fx: 0, Fy: 0, M: 5280 }],
+    distLoads: [{ member: 0, wi: -0.75, wj: -0.75 }],
+    uniformSprings: [{ member: 0, k: 5 }],
+    samplesPerMember: 4,
+    include: ["data"],
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(
+    result.members.map((member) => [member.i, member.j]),
+    [
+      [0, 4],
+      [4, 3],
+      [3, 2],
+      [2, 1],
+    ],
+  );
+  assert.equal(result.members.length, 4);
+  assert.ok(Number.isFinite(result.peaks.M.value));
 });
 
 test("AI design output coercion requires full design fields", () => {

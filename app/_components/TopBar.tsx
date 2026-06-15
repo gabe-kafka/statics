@@ -13,7 +13,9 @@ export function TopBar({
   signedIn,
   authStatus,
   email,
+  aiApiKey,
   designs,
+  onAiApiKeyChange,
   onSave,
   onNew,
   onLoad,
@@ -25,11 +27,15 @@ export function TopBar({
   signedIn: boolean;
   authStatus: string;
   email: string;
+  aiApiKey: string;
   designs: DesignRow[];
+  onAiApiKeyChange: (value: string) => void;
   onSave: () => void;
   onNew: () => void;
   onLoad: (id: string) => void;
 }) {
+  const needsAiKey = signedIn && aiApiKey.trim().length === 0;
+
   return (
     <div className="flex h-9 items-stretch border-b border-border text-[10px]">
       <div className="flex items-center gap-2 border-r border-border px-3">
@@ -98,10 +104,40 @@ export function TopBar({
           <span className="uppercase text-dim">...</span>
         ) : signedIn ? (
           <>
+            <label className="flex items-center gap-1">
+              <span
+                className={
+                  needsAiKey
+                    ? "uppercase tracking-[0.08em] text-accent"
+                    : "uppercase tracking-[0.08em] text-muted"
+                }
+              >
+                AI KEY
+              </span>
+              <input
+                type="password"
+                value={aiApiKey}
+                onChange={(e) => onAiApiKeyChange(e.target.value)}
+                placeholder="OpenAI key"
+                autoComplete="new-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className={
+                  needsAiKey
+                    ? "h-6 w-36 border border-accent bg-surface px-2 font-mono text-[10px] text-text placeholder:text-dim focus:outline-none"
+                    : "h-6 w-36 border border-border bg-surface px-2 font-mono text-[10px] text-text placeholder:text-dim focus:border-accent focus:outline-none"
+                }
+                title="AI API key. Stored only in this browser tab until refresh or sign-out."
+              />
+            </label>
             <span className="text-muted">{email}</span>
             <button
               type="button"
-              onClick={() => signOut()}
+              onClick={() => {
+                onAiApiKeyChange("");
+                signOut();
+              }}
               className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent"
             >
               SIGN OUT
