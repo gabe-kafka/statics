@@ -75,6 +75,19 @@ type ApiState =
 
 const SAMPLES_PER_MEMBER = 41;
 
+type DiagramSample = {
+  station: number;
+  x: number;
+  y: number;
+  r: number;
+  v: number;
+  m: number;
+  t: number;
+  d: number;
+};
+
+type DiagramField = "r" | "v" | "m" | "t" | "d";
+
 export function Diagrams({
   nodes,
   members,
@@ -229,19 +242,9 @@ export function Diagrams({
       : [];
   const totalStation = Math.max(stationEnds[stationEnds.length - 1] ?? 1, 1);
   const X = (s: number) => PAD + (s / totalStation) * (W - 2 * PAD);
-  const frame = projectFrame(nodes, W, H_FBD, 28);
+  const frame = projectFrame(nodes, W, H_FBD, PAD);
 
-  type Sample = {
-    station: number;
-    x: number;
-    y: number;
-    r: number;
-    v: number;
-    m: number;
-    t: number;
-    d: number;
-  };
-  const samples: Sample[] = [];
+  const samples: DiagramSample[] = [];
   const reactions: ReactionOut[] =
     state.kind === "ok" ? state.data.reactions : [];
   const reactionMasks = new Map<
@@ -689,6 +692,26 @@ export function Diagrams({
       label={`N${idx + 1}`}
     />
   ));
+  const topGuideEls = nodes.map(([x, y], idx) => {
+    const guideX = frame.X(x);
+    const guideY = frame.Y(y);
+    return (
+      <ProjectionGuide
+        key={`top-guide-${idx}`}
+        x={guideX}
+        y1={guideY}
+        y2={H_TOP}
+      />
+    );
+  });
+  const bottomGuideEls = nodes.map(([x], idx) => (
+    <ProjectionGuide
+      key={`bottom-guide-${idx}`}
+      x={frame.X(x)}
+      y1={0}
+      y2={H_BOT + 14}
+    />
+  ));
 
   // ─── R, V and M paths ──────────────────────────────────────────────
   const rPath = samples
@@ -736,14 +759,6 @@ export function Diagrams({
     (a, b) => (Math.abs(b.r) > Math.abs(a.r) ? b : a),
     samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
   );
-  const vMaxSample = samples.reduce(
-    (a, b) => (Math.abs(b.v) > Math.abs(a.v) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
-  );
-  const mMaxSample = samples.reduce(
-    (a, b) => (Math.abs(b.m) > Math.abs(a.m) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
-  );
 
   const tPath = samples
     .map((s, i) => {
@@ -777,14 +792,6 @@ export function Diagrams({
         .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yDAxis} Z`
     : "";
 
-  const tMaxSample = samples.reduce(
-    (a, b) => (Math.abs(b.t) > Math.abs(a.t) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
-  );
-  const dMaxSample = samples.reduce(
-    (a, b) => (Math.abs(b.d) > Math.abs(a.d) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
-  );
   const equilibrium =
     state.kind === "ok"
       ? computeEquilibrium(
@@ -818,6 +825,7 @@ export function Diagrams({
         width="100%"
         style={{ display: "block" }}
       >
+        <g>{topGuideEls}</g>
         <g>
           {uniformSpringEls}
           {members.map(([i, j], idx) => {
@@ -870,16 +878,15 @@ export function Diagrams({
             color={PALETTE.result}
           />
           {samples.length > 0 && (
-            <text
-              x={X(rMaxSample.station)}
-              y={yRAxis - (rMaxSample.r / rmax) * (H_R / 2 - 12) - 4}
-              fontSize={9}
-              fill={PALETTE.result}
-              textAnchor="middle"
-              fontFamily="var(--font-mono)"
-            >
-              {fmt(rMaxSample.r)}
-            </text>
+            <GraphValueLabels
+              samples={samples}
+              field="r"
+              yAxis={yRAxis}
+              height={H_R}
+              max={rmax}
+              X={X}
+              unit="klf"
+            />
           )}
         </g>
 
@@ -905,16 +912,15 @@ export function Diagrams({
             color={PALETTE.shear}
           />
           {samples.length > 0 && (
-            <text
-              x={X(vMaxSample.station)}
-              y={yVAxis - (vMaxSample.v / vmax) * (H_V / 2 - 12) - 4}
-              fontSize={9}
-              fill={PALETTE.shear}
-              textAnchor="middle"
-              fontFamily="var(--font-mono)"
-            >
-              {fmt(vMaxSample.v)}
-            </text>
+            <GraphValueLabels
+              samples={samples}
+              field="v"
+              yAxis={yVAxis}
+              height={H_V}
+              max={vmax}
+              X={X}
+              unit="k"
+            />
           )}
         </g>
 
@@ -940,16 +946,15 @@ export function Diagrams({
             color={PALETTE.moment}
           />
           {samples.length > 0 && (
-            <text
-              x={X(mMaxSample.station)}
-              y={yMAxis - (mMaxSample.m / mmax) * (H_M / 2 - 12) - 4}
-              fontSize={9}
-              fill={PALETTE.moment}
-              textAnchor="middle"
-              fontFamily="var(--font-mono)"
-            >
-              {fmt(mMaxSample.m)}
-            </text>
+            <GraphValueLabels
+              samples={samples}
+              field="m"
+              yAxis={yMAxis}
+              height={H_M}
+              max={mmax}
+              X={X}
+              unit="k-ft"
+            />
           )}
         </g>
 
@@ -1034,6 +1039,7 @@ export function Diagrams({
         width="100%"
         style={{ display: "block" }}
       >
+        <g>{bottomGuideEls}</g>
         <g>
           <line
             x1={PAD}
@@ -1051,16 +1057,15 @@ export function Diagrams({
           )}
           <SectionLabel x={W - PAD} y={yT0 + 12} text="θ(l)" color={PALETTE.theta} />
           {samples.length > 0 && (
-            <text
-              x={X(tMaxSample.station)}
-              y={yTAxis - (tMaxSample.t / tmax) * (H_T / 2 - 12) - 4}
-              fontSize={9}
-              fill={PALETTE.theta}
-              textAnchor="middle"
-              fontFamily="var(--font-mono)"
-            >
-              {fmt(tMaxSample.t)}
-            </text>
+            <GraphValueLabels
+              samples={samples}
+              field="t"
+              yAxis={yTAxis}
+              height={H_T}
+              max={tmax}
+              X={X}
+              unit="rad"
+            />
           )}
         </g>
 
@@ -1081,16 +1086,15 @@ export function Diagrams({
           )}
           <SectionLabel x={W - PAD} y={yD0 + 12} text="Δ(l)" color={PALETTE.delta} />
           {samples.length > 0 && (
-            <text
-              x={X(dMaxSample.station)}
-              y={yDAxis - (dMaxSample.d / dmax) * (H_D / 2 - 12) - 4}
-              fontSize={9}
-              fill={PALETTE.delta}
-              textAnchor="middle"
-              fontFamily="var(--font-mono)"
-            >
-              {fmt(dMaxSample.d)}
-            </text>
+            <GraphValueLabels
+              samples={samples}
+              field="d"
+              yAxis={yDAxis}
+              height={H_D}
+              max={dmax}
+              X={X}
+              unit="in"
+            />
           )}
         </g>
 
@@ -1428,6 +1432,144 @@ function NodeLabel({
   );
 }
 
+function ProjectionGuide({
+  x,
+  y1,
+  y2,
+}: {
+  x: number;
+  y1: number;
+  y2: number;
+}) {
+  return (
+    <line
+      x1={x}
+      y1={y1}
+      x2={x}
+      y2={y2}
+      stroke={PALETTE.dim}
+      strokeWidth={0.45}
+      strokeDasharray="3 5"
+      strokeOpacity={0.45}
+      vectorEffect="non-scaling-stroke"
+    />
+  );
+}
+
+function GraphValueLabels({
+  samples,
+  field,
+  yAxis,
+  height,
+  max,
+  X,
+  unit,
+}: {
+  samples: DiagramSample[];
+  field: DiagramField;
+  yAxis: number;
+  height: number;
+  max: number;
+  X: (station: number) => number;
+  unit: string;
+}) {
+  return (
+    <>
+      {localPeakSamples(samples, field).map((sample, index) => {
+        const value = sample[field];
+        const x = X(sample.station);
+        const yCurve = yAxis - (value / max) * (height / 2 - 12);
+        const y = yCurve + (value >= 0 ? -6 : 14);
+        return (
+          <GraphValueLabel
+            key={`${field}-${index}-${sample.station}`}
+            x={x}
+            y={y}
+            text={`${fmt(value)} ${unit}`}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function localPeakSamples(
+  samples: DiagramSample[],
+  field: DiagramField,
+): DiagramSample[] {
+  if (samples.length === 0) return [];
+  const max = Math.max(1e-12, ...samples.map((sample) => Math.abs(sample[field])));
+  const valueTolerance = 0.03 * max;
+  const stationSpan =
+    samples[samples.length - 1].station - samples[0].station ||
+    Math.max(1, samples[0].station);
+  const stationTolerance = Math.max(1e-9, 0.01 * stationSpan);
+  const out: DiagramSample[] = [];
+
+  const push = (sample: DiagramSample) => {
+    if (Math.abs(sample[field]) < valueTolerance) return;
+    const last = out[out.length - 1];
+    if (
+      last &&
+      Math.abs(last.station - sample.station) < stationTolerance &&
+      Math.abs(last[field] - sample[field]) < valueTolerance
+    ) {
+      return;
+    }
+    out.push(sample);
+  };
+
+  push(samples[0]);
+  for (let i = 1; i < samples.length - 1; i++) {
+    const a = samples[i - 1][field];
+    const b = samples[i][field];
+    const c = samples[i + 1][field];
+    const isMax = b >= a && b >= c && (b > a || b > c);
+    const isMin = b <= a && b <= c && (b < a || b < c);
+    if (isMax || isMin) push(samples[i]);
+  }
+  push(samples[samples.length - 1]);
+
+  return out;
+}
+
+function GraphValueLabel({
+  x,
+  y,
+  text,
+}: {
+  x: number;
+  y: number;
+  text: string;
+}) {
+  const width = text.length * 6.4 + 10;
+  const height = 16;
+  return (
+    <g pointerEvents="none">
+      <rect
+        x={x - width / 2}
+        y={y - 12}
+        width={width}
+        height={height}
+        fill="#fff"
+        stroke="#111"
+        strokeOpacity={0.22}
+      />
+      <text
+        x={x}
+        y={y}
+        fontSize={10}
+        fontWeight={700}
+        fill="#111"
+        textAnchor="middle"
+        fontFamily="var(--font-mono)"
+      >
+        {text}
+      </text>
+    </g>
+  );
+}
+
 function LoadLabel({
   x,
   y,
@@ -1522,24 +1664,24 @@ function MomentArrow({
   positive: boolean;
   color: string;
 }) {
-  const startAngle = positive ? 130 : 50;
-  const endAngle = positive ? -145 : 325;
-  const start = polarPoint(cx, cy, r, startAngle);
+  const endAngle = positive ? 35 : 145;
   const end = polarPoint(cx, cy, r, endAngle);
-  const sweep = positive ? 0 : 1;
-  const tangent = ((endAngle + (positive ? -90 : 90)) * Math.PI) / 180;
+  const angle = (endAngle * Math.PI) / 180;
+  const tx = positive ? -Math.sin(angle) : Math.sin(angle);
+  const ty = positive ? -Math.cos(angle) : Math.cos(angle);
+  const nx = -ty;
+  const ny = tx;
   const head = 5;
-  const hx1 = end.x - Math.cos(tangent) * head + Math.cos(tangent + Math.PI / 2) * head * 0.55;
-  const hy1 = end.y - Math.sin(tangent) * head + Math.sin(tangent + Math.PI / 2) * head * 0.55;
-  const hx2 = end.x - Math.cos(tangent) * head + Math.cos(tangent - Math.PI / 2) * head * 0.55;
-  const hy2 = end.y - Math.sin(tangent) * head + Math.sin(tangent - Math.PI / 2) * head * 0.55;
+  const bx = end.x - tx * head;
+  const by = end.y - ty * head;
+  const hx1 = bx + nx * head * 0.55;
+  const hy1 = by + ny * head * 0.55;
+  const hx2 = bx - nx * head * 0.55;
+  const hy2 = by - ny * head * 0.55;
 
   return (
     <g stroke={color} fill={color} strokeWidth={1.3} strokeLinecap="round">
-      <path
-        d={`M ${start.x} ${start.y} A ${r} ${r} 0 1 ${sweep} ${end.x} ${end.y}`}
-        fill="none"
-      />
+      <circle cx={cx} cy={cy} r={r} fill="none" />
       <polygon points={`${end.x},${end.y} ${hx1},${hy1} ${hx2},${hy2}`} />
     </g>
   );

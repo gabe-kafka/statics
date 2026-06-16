@@ -92,14 +92,36 @@ export function renderSvg(
   const palette = paletteFor(req.theme);
 
   const fbd = renderFbd(req, res, ux, unit, uW, palette);
-  const R = renderCurve(res, X, stationEnds, "R", palette.shear, "R(l)", palette);
-  const V = renderCurve(res, X, stationEnds, "V", palette.shear, "V(l)", palette);
+  const R = renderCurve(res, X, stationEnds, "R", palette.shear, "R(l)", palette, {
+    unit: "klf",
+  });
+  const V = renderCurve(res, X, stationEnds, "V", palette.shear, "V(l)", palette, {
+    unit: "k",
+  });
   const M = renderCurve(res, X, stationEnds, "M", palette.moment, `M(l) [k·${unit}]`, palette, {
+    unit: `k-${unit}`,
     valueScale: 1 / lenScale,
   });
-  const theta = renderCurve(res, X, stationEnds, "theta", palette.theta, "θ(l)", palette);
-  const delta = renderCurve(res, X, stationEnds, "delta", palette.delta, "Δ(l)", palette);
-  const all = renderAll(fbd, R, V, M, theta, delta, totalStation, X, ux, unit, palette);
+  const theta = renderCurve(res, X, stationEnds, "theta", palette.theta, "θ(l)", palette, {
+    unit: "rad",
+  });
+  const delta = renderCurve(res, X, stationEnds, "delta", palette.delta, "Δ(l)", palette, {
+    unit: "in",
+  });
+  const all = renderAll(
+    fbd,
+    R,
+    V,
+    M,
+    theta,
+    delta,
+    fbdGuidePoints(req.nodes),
+    totalStation,
+    X,
+    ux,
+    unit,
+    palette,
+  );
 
   return { fbd, R, V, M, theta, delta, all };
 }
@@ -146,6 +168,11 @@ function svgWrap(
   palette: Palette,
 ): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="background:${palette.bg};font-family:ui-monospace,Menlo,monospace;display:block">${body}</svg>`;
+}
+
+function fbdGuidePoints(nodes: SolveRequest["nodes"]): { x: number; y: number }[] {
+  const frame = projectFrame(nodes, W, 220, PAD);
+  return nodes.map(([x, y]) => ({ x: frame.X(x), y: frame.Y(y) }));
 }
 
 function escapeText(s: string): string {
@@ -202,21 +229,24 @@ function momentArrow(
   positive: boolean,
   color: string,
 ): string {
-  const startAngle = positive ? 130 : 50;
-  const endAngle = positive ? -145 : 325;
-  const start = polarPoint(cx, cy, r, startAngle);
+  const endAngle = positive ? 35 : 145;
   const end = polarPoint(cx, cy, r, endAngle);
-  const sweep = positive ? 0 : 1;
-  const tangent = ((endAngle + (positive ? -90 : 90)) * Math.PI) / 180;
+  const angle = (endAngle * Math.PI) / 180;
+  const tx = positive ? -Math.sin(angle) : Math.sin(angle);
+  const ty = positive ? -Math.cos(angle) : Math.cos(angle);
+  const nx = -ty;
+  const ny = tx;
   const head = 5;
-  const hx1 = end.x - Math.cos(tangent) * head + Math.cos(tangent + Math.PI / 2) * head * 0.55;
-  const hy1 = end.y - Math.sin(tangent) * head + Math.sin(tangent + Math.PI / 2) * head * 0.55;
-  const hx2 = end.x - Math.cos(tangent) * head + Math.cos(tangent - Math.PI / 2) * head * 0.55;
-  const hy2 = end.y - Math.sin(tangent) * head + Math.sin(tangent - Math.PI / 2) * head * 0.55;
+  const bx = end.x - tx * head;
+  const by = end.y - ty * head;
+  const hx1 = bx + nx * head * 0.55;
+  const hy1 = by + ny * head * 0.55;
+  const hx2 = bx - nx * head * 0.55;
+  const hy2 = by - ny * head * 0.55;
 
   return (
     `<g stroke="${color}" fill="${color}" stroke-width="1.3" stroke-linecap="round">` +
-    `<path d="M ${start.x} ${start.y} A ${r} ${r} 0 1 ${sweep} ${end.x} ${end.y}" fill="none"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"/>` +
     `<polygon points="${end.x},${end.y} ${hx1},${hy1} ${hx2},${hy2}"/>` +
     `</g>`
   );
@@ -418,7 +448,7 @@ function renderFbd(
   palette: Palette,
 ): string {
   const H = 220;
-  const frame = projectFrame(req.nodes, W, H, 34);
+  const frame = projectFrame(req.nodes, W, H, PAD);
   const out: string[] = [];
 
   // Distributed loads: callers (e.g. the structural-terminal builder)
@@ -679,7 +709,7 @@ function renderCurve(
   color: string,
   label: string,
   palette: Palette,
-  opts: { sagBelow?: boolean; valueScale?: number } = {},
+  opts: { sagBelow?: boolean; valueScale?: number; unit?: string } = {},
 ): string {
   const H = 150;
   const yAxis = H / 2;
@@ -706,10 +736,11 @@ function renderCurve(
     : "";
   const extrema = findExtrema(samples, field);
   const labels = extrema
-    .map(
-      (e) =>
-        `<text x="${X(e.x).toFixed(1)}" y="${(yOf(e[field]) - 4).toFixed(1)}" fill="${color}" font-size="9" text-anchor="middle">${escapeText(fmt(e[field] * valueScale))}</text>`,
-    )
+    .map((e) => {
+      const labelText = `${fmt(e[field] * valueScale)}${opts.unit ? ` ${opts.unit}` : ""}`;
+      const labelY = yOf(e[field]) + (e[field] >= 0 ? -6 : 14);
+      return graphValueLabel(X(e.x), labelY, labelText);
+    })
     .join("");
   return svgWrap(
     W,
@@ -724,6 +755,17 @@ function renderCurve(
   );
 }
 
+function graphValueLabel(x: number, y: number, text: string): string {
+  const width = text.length * 6.4 + 10;
+  const height = 16;
+  return (
+    `<g>` +
+    `<rect x="${(x - width / 2).toFixed(1)}" y="${(y - 12).toFixed(1)}" width="${width.toFixed(1)}" height="${height}" fill="#fff" stroke="#111" stroke-opacity="0.22"/>` +
+    `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" fill="#111" font-size="10" font-weight="700" text-anchor="middle">${escapeText(text)}</text>` +
+    `</g>`
+  );
+}
+
 function renderAll(
   fbd: string,
   R: string,
@@ -731,6 +773,7 @@ function renderAll(
   M: string,
   theta: string,
   delta: string,
+  guides: { x: number; y: number }[],
   totalStation: number,
   X: (x: number) => number,
   ux: (xInches: number) => number,
@@ -750,6 +793,12 @@ function renderAll(
   ];
   let y = 0;
   const parts: string[] = [];
+  const graphBottom = panels.reduce((sum, panel) => sum + panel.h + 8, 0);
+  for (const guide of guides) {
+    parts.push(
+      `<line x1="${guide.x.toFixed(1)}" y1="${guide.y.toFixed(1)}" x2="${guide.x.toFixed(1)}" y2="${graphBottom}" stroke="${palette.dim}" stroke-width="0.45" stroke-dasharray="3 5" stroke-opacity="0.45"/>`,
+    );
+  }
   for (const p of panels) {
     parts.push(`<g transform="translate(0,${y})">${strip(p.svg)}</g>`);
     y += p.h + 8;
