@@ -313,6 +313,7 @@ export function Diagrams({
 
   // ─── FBD ───────────────────────────────────────────────────────────
   const fbdLoads: React.ReactElement[] = [];
+  const fbdLoadLabels: React.ReactElement[] = [];
 
   // Distributed loads: render each as a top bar + downward arrows onto beam.
   combinedLoads.distLoads.forEach(([mIdx, wi, wj], k) => {
@@ -383,21 +384,19 @@ export function Diagrams({
       );
     }
     const midX = (xa + xb) / 2;
-    const midY = Math.min(y_a, y_b) - 6;
+    const midY = Math.min(y_a, y_b) - 12;
     const label =
-      Math.abs(wi - wj) < 1e-9 ? `${fmt(wi)}` : `${fmt(wi)} → ${fmt(wj)}`;
-    fbdLoads.push(
-      <text
+      Math.abs(wi - wj) < 1e-9
+        ? `w=${fmt(Math.abs(wi))} klf`
+        : `w=${fmt(Math.abs(wi))}->${fmt(Math.abs(wj))} klf`;
+    fbdLoadLabels.push(
+      <LoadLabel
         key={`dl-t-${k}`}
         x={midX}
         y={midY}
-        fill={PALETTE.load}
-        fontSize={10}
-        textAnchor="middle"
-        fontFamily="var(--font-mono)"
-      >
-        {label}
-      </text>,
+        text={label}
+        anchor="middle"
+      />,
     );
   });
 
@@ -422,17 +421,14 @@ export function Diagrams({
           head={6}
         />,
       );
-      fbdLoads.push(
-        <text
+      fbdLoadLabels.push(
+        <LoadLabel
           key={`pl-${k}-yt`}
           x={cx + 6}
           y={tailY + 10}
-          fill={PALETTE.load}
-          fontSize={10}
-          fontFamily="var(--font-mono)"
-        >
-          {fmt(Math.abs(fy))}
-        </text>,
+          text={`P=${fmt(Math.abs(fy))} k`}
+          anchor="start"
+        />,
       );
     }
     if (fx !== 0) {
@@ -450,29 +446,35 @@ export function Diagrams({
           head={6}
         />,
       );
+      fbdLoadLabels.push(
+        <LoadLabel
+          key={`pl-${k}-xt`}
+          x={tailX}
+          y={cy - 8}
+          text={`H=${fmt(Math.abs(fx))} k`}
+          anchor={right ? "end" : "start"}
+        />,
+      );
     }
     if (moment !== 0) {
       fbdLoads.push(
         <MomentArrow
           key={`pl-${k}-m`}
           cx={cx}
-          cy={cy - 18}
-          r={15}
+          cy={cy - 16}
+          r={14}
           positive={moment > 0}
           color={PALETTE.load}
         />,
       );
-      fbdLoads.push(
-        <text
+      fbdLoadLabels.push(
+        <LoadLabel
           key={`pl-${k}-mt`}
-          x={cx + 20}
-          y={cy - 26}
-          fill={PALETTE.load}
-          fontSize={10}
-          fontFamily="var(--font-mono)"
-        >
-          {fmt(Math.abs(moment))}
-        </text>,
+          x={cx + 22}
+          y={cy - 28}
+          text={`M=${fmt(Math.abs(moment))} k-ft`}
+          anchor="start"
+        />,
       );
     }
   });
@@ -783,7 +785,6 @@ export function Diagrams({
         style={{ display: "block" }}
       >
         <g>
-          {fbdLoads}
           {uniformSpringEls}
           {members.map(([i, j], idx) => {
             if (!nodes[i] || !nodes[j]) return null;
@@ -802,8 +803,10 @@ export function Diagrams({
           })}
           {supports}
           {pointSpringEls}
+          {fbdLoads}
           {reactionEls}
           {nodeLabelEls}
+          {fbdLoadLabels}
           <SectionLabel
             x={W - PAD}
             y={16}
@@ -1348,6 +1351,48 @@ function NodeLabel({
         fontFamily="var(--font-mono)"
       >
         {label}
+      </text>
+    </g>
+  );
+}
+
+function LoadLabel({
+  x,
+  y,
+  text,
+  anchor = "middle",
+}: {
+  x: number;
+  y: number;
+  text: string;
+  anchor?: "start" | "middle" | "end";
+}) {
+  const width = text.length * 6.2 + 10;
+  const height = 16;
+  const rectX =
+    anchor === "middle" ? x - width / 2 : anchor === "end" ? x - width : x;
+  const textX =
+    anchor === "middle" ? x : anchor === "end" ? x - 5 : x + 5;
+  return (
+    <g pointerEvents="none">
+      <rect
+        x={rectX}
+        y={y - 12}
+        width={width}
+        height={height}
+        fill="#fff"
+        stroke={PALETTE.load}
+        strokeOpacity={0.28}
+      />
+      <text
+        x={textX}
+        y={y}
+        fontSize={10}
+        fill={PALETTE.load}
+        textAnchor={anchor}
+        fontFamily="var(--font-mono)"
+      >
+        {text}
       </text>
     </g>
   );
