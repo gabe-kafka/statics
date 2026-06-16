@@ -832,7 +832,7 @@ export function Diagrams({
           <SectionLabel
             x={W - PAD}
             y={yV0 + 12}
-            text="V(s)"
+            text="V(x)"
             color={PALETTE.shear}
           />
           {samples.length > 0 && (
@@ -867,7 +867,7 @@ export function Diagrams({
           <SectionLabel
             x={W - PAD}
             y={yM0 + 12}
-            text="M(s)"
+            text="M(x)"
             color={PALETTE.moment}
           />
           {samples.length > 0 && (
@@ -980,7 +980,7 @@ export function Diagrams({
               <path d={tPath} fill="none" stroke={PALETTE.theta} strokeWidth={1.4} />
             </>
           )}
-          <SectionLabel x={W - PAD} y={yT0 + 12} text="θ(s)" color={PALETTE.theta} />
+          <SectionLabel x={W - PAD} y={yT0 + 12} text="θ(x)" color={PALETTE.theta} />
           {samples.length > 0 && (
             <text
               x={X(tMaxSample.station)}
@@ -1010,7 +1010,7 @@ export function Diagrams({
               <path d={dPath} fill="none" stroke={PALETTE.delta} strokeWidth={1.4} />
             </>
           )}
-          <SectionLabel x={W - PAD} y={yD0 + 12} text="Δ(s)" color={PALETTE.delta} />
+          <SectionLabel x={W - PAD} y={yD0 + 12} text="Δ(x)" color={PALETTE.delta} />
           {samples.length > 0 && (
             <text
               x={X(dMaxSample.station)}

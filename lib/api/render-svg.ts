@@ -92,12 +92,12 @@ export function renderSvg(
   const palette = paletteFor(req.theme);
 
   const fbd = renderFbd(req, res, ux, unit, uW, palette);
-  const V = renderCurve(res, X, stationEnds, "V", palette.shear, "V(s)", palette);
-  const M = renderCurve(res, X, stationEnds, "M", palette.moment, `M(s) [k·${unit}]`, palette, {
+  const V = renderCurve(res, X, stationEnds, "V", palette.shear, "V(x)", palette);
+  const M = renderCurve(res, X, stationEnds, "M", palette.moment, `M(x) [k·${unit}]`, palette, {
     valueScale: 1 / lenScale,
   });
-  const theta = renderCurve(res, X, stationEnds, "theta", palette.theta, "θ(s)", palette);
-  const delta = renderCurve(res, X, stationEnds, "delta", palette.delta, "Δ(s)", palette);
+  const theta = renderCurve(res, X, stationEnds, "theta", palette.theta, "θ(x)", palette);
+  const delta = renderCurve(res, X, stationEnds, "delta", palette.delta, "Δ(x)", palette);
   const all = renderAll(fbd, V, M, theta, delta, totalStation, X, ux, unit, palette);
 
   return { fbd, V, M, theta, delta, all };
