@@ -60,6 +60,8 @@ function paletteFor(theme: SolveRequest["theme"]): Palette {
 
 const W = 880;
 const PAD = 48;
+const LOAD_ARROW_MAX = 56;
+const LOAD_ARROW_MIN = 8;
 
 type Plot = "fbd" | "R" | "V" | "M" | "theta" | "delta";
 
@@ -189,6 +191,13 @@ function fmt(n: number): string {
   if (a < 0.1) return n.toFixed(3);
   if (a < 10) return n.toFixed(2);
   return n.toFixed(1);
+}
+
+function scaledLoadArrowLength(value: number, max: number): number {
+  const magnitude = Math.abs(value);
+  if (magnitude < 1e-9) return 0;
+  const ratio = Math.min(1, magnitude / Math.max(max, 1e-9));
+  return Math.max(LOAD_ARROW_MIN, ratio * LOAD_ARROW_MAX);
 }
 
 function arrow(
@@ -481,20 +490,17 @@ function renderFbd(
     }
   }
 
-  // Shared scale across every bar so a 4.23 k/ft load draws ~42 %
-  // taller than a 2.98 k/ft load on the same FBD. With a per-bar max
-  // every uniform load lands at the same height regardless of size.
-  const wMaxAll = Math.max(
+  const loadVisualMax = Math.max(
     1e-6,
-    ...bars.flatMap((b) => [Math.abs(b.w0), Math.abs(b.w1)]),
+    ...(req.pointLoads ?? []).flatMap((p) => [Math.abs(p.Fx), Math.abs(p.Fy)]),
+    ...bars.flatMap((b) => [Math.abs(uW(b.w0)), Math.abs(uW(b.w1))]),
   );
   for (const bar of bars) {
     const xa = frame.X(bar.x0);
     const xb = frame.X(bar.x1);
     const yBase = frame.Y(req.nodes[0]?.[1] ?? 0);
-    const SCALE = Math.min(55, 30 * (1 + wMaxAll / 6));
-    const ha = (Math.abs(bar.w0) / wMaxAll) * SCALE;
-    const hb = (Math.abs(bar.w1) / wMaxAll) * SCALE;
+    const ha = scaledLoadArrowLength(uW(bar.w0), loadVisualMax);
+    const hb = scaledLoadArrowLength(uW(bar.w1), loadVisualMax);
     const ya = yBase - ha - 2;
     const yb = yBase - hb - 2;
     out.push(
@@ -529,14 +535,24 @@ function renderFbd(
     if (pl.Fx === 0 && pl.Fy === 0 && moment === 0) continue;
     const cx = frame.X(req.nodes[pl.node][0]);
     const cy = frame.Y(req.nodes[pl.node][1]);
-    const L = 40;
     if (pl.Fy !== 0) {
+      const L = scaledLoadArrowLength(pl.Fy, loadVisualMax);
       const down = pl.Fy < 0;
       const tipY = down ? cy - 3 : cy + 3;
       const tailY = down ? tipY - L : tipY + L;
       out.push(arrow(cx, tailY, cx, tipY, palette.load, 6));
       out.push(
         `<text x="${cx + 6}" y="${tailY + 10}" fill="${palette.load}" font-size="10">${escapeText(fmt(Math.abs(pl.Fy)))}</text>`,
+      );
+    }
+    if (pl.Fx !== 0) {
+      const L = scaledLoadArrowLength(pl.Fx, loadVisualMax);
+      const right = pl.Fx > 0;
+      const tipX = right ? cx + 3 : cx - 3;
+      const tailX = right ? tipX - L : tipX + L;
+      out.push(arrow(tailX, cy, tipX, cy, palette.load, 6));
+      out.push(
+        `<text x="${tailX}" y="${cy - 8}" fill="${palette.load}" font-size="10" text-anchor="${right ? "end" : "start"}">${escapeText(fmt(Math.abs(pl.Fx)))}</text>`,
       );
     }
     if (moment !== 0) {
@@ -642,7 +658,18 @@ function renderFbd(
     }
   }
 
-  // node labels (converted to caller's display unit)
+  // node labels
+  for (let i = 0; i < req.nodes.length; i++) {
+    const [x, y] = req.nodes[i];
+    const cx = frame.X(x);
+    const cy = frame.Y(y);
+    out.push(
+      `<circle cx="${cx}" cy="${cy}" r="2.6" fill="${palette.support}"/>`,
+      `<text x="${cx + 7}" y="${cy - 8}" fill="${palette.support}" stroke="${palette.bg}" stroke-width="3" paint-order="stroke" font-size="10">${escapeText(`N${i + 1}`)}</text>`,
+    );
+  }
+
+  // coordinate labels (converted to caller's display unit)
   for (const [x, y] of req.nodes) {
     out.push(
       `<text x="${frame.X(x)}" y="${frame.Y(y) + 26}" fill="${palette.dim}" font-size="9" text-anchor="middle">${escapeText(`${fmt(ux(x))},${fmt(ux(y))}`)}</text>`,

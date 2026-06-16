@@ -6,6 +6,8 @@ export type InputKey =
   | "loadCases"
   | "loadCombinations"
   | "pointLoads"
+  | "axialLoads"
+  | "pointMoments"
   | "distLoads"
   | "fixity"
   | "pointSprings"
@@ -29,6 +31,13 @@ export type PointLoadRow = [
   M: number,
   loadCase: string,
 ];
+export type TransversePointLoadRow = [
+  node: number,
+  Fy: number,
+  loadCase: string,
+];
+export type AxialPointLoadRow = [node: number, Fx: number, loadCase: string];
+export type PointMomentRow = [node: number, M: number, loadCase: string];
 export type DistLoadRow = [
   member: number,
   wi: number,
@@ -79,7 +88,17 @@ export const INPUTS: readonly InputSpec[] = [
   {
     key: "pointLoads",
     label: "POINT LOADS",
-    columns: ["node", "Fx", "Fy", "M", "case"],
+    columns: ["node", "Fy", "case"],
+  },
+  {
+    key: "axialLoads",
+    label: "AXIAL POINT LOADS",
+    columns: ["node", "Fx", "case"],
+  },
+  {
+    key: "pointMoments",
+    label: "POINT MOMENTS",
+    columns: ["node", "M", "case"],
   },
   {
     key: "distLoads",
@@ -105,7 +124,9 @@ export const DEFAULT_FIELDS: Fields = {
   members: "(0, 1)\n(1, 2)",
   loadCases: serializeRows(DEFAULT_LOAD_CASE_ROWS),
   loadCombinations: serializeRows(DEFAULT_LOAD_COMBINATION_ROWS),
-  pointLoads: "(1, 0, -10, 0, D)",
+  pointLoads: "(1, -10, D)",
+  axialLoads: "",
+  pointMoments: "",
   distLoads: "(0, -2.98, -2.98, D)\n(1, -3.50, -5.64, D)",
   fixity: "(0, 1, 1, 0)\n(2, 0, 1, 0)",
   pointSprings: "",
@@ -144,7 +165,12 @@ export function defaultRowForInput(spec: InputSpec, rowIndex: number): string[] 
       ]
     );
   }
-  if (spec.key === "pointLoads") return ["0", "0", "0", "0", "D"];
+  if (
+    spec.key === "pointLoads" ||
+    spec.key === "axialLoads" ||
+    spec.key === "pointMoments"
+  )
+    return ["0", "0", "D"];
   if (spec.key === "distLoads") return ["0", "0", "0", "D"];
   return spec.columns.map(() => "0");
 }
@@ -172,6 +198,31 @@ export function parseFields(fields: Fields): ParsedDesignFields {
     r[1]?.trim() || r[0]?.trim() || "Dead",
   ]);
   const defaultCase = loadCases[0]?.[0] ?? "D";
+  const parsedPointLoads: PointLoadRow[] = [
+    ...parseRows(fields.pointLoads).map((r) =>
+      parsePointLoadAuthoringRow(r, defaultCase),
+    ),
+    ...parseRows(fields.axialLoads).map(
+      (r) =>
+        [
+          Number(r[0]) || 0,
+          Number(r[1]) || 0,
+          0,
+          0,
+          r[2]?.trim() || defaultCase,
+        ] as PointLoadRow,
+    ),
+    ...parseRows(fields.pointMoments).map(
+      (r) =>
+        [
+          Number(r[0]) || 0,
+          0,
+          0,
+          Number(r[1]) || 0,
+          r[2]?.trim() || defaultCase,
+        ] as PointLoadRow,
+    ),
+  ];
 
   return {
     nodes: parseRows(fields.nodes).map(
@@ -198,16 +249,7 @@ export function parseFields(fields: Fields): ParsedDesignFields {
           Number(r[3]) || 0,
         ] as [number, number, number, number],
     ),
-    pointLoads: parseRows(fields.pointLoads).map(
-      (r) =>
-        [
-          Number(r[0]) || 0,
-          Number(r[1]) || 0,
-          Number(r[2]) || 0,
-          Number(r[3]) || 0,
-          r[4]?.trim() || defaultCase,
-        ] as PointLoadRow,
-    ),
+    pointLoads: parsedPointLoads,
     distLoads: parseRows(fields.distLoads).map(
       (r) =>
         [
@@ -236,16 +278,88 @@ export function parseFields(fields: Fields): ParsedDesignFields {
 }
 
 export function fieldsFromDesign(d: Partial<Fields>): Fields {
+  const pointLoadTables = splitPointLoadTables(d);
   return {
     nodes: d.nodes ?? "",
     members: d.members ?? "",
     loadCases: d.loadCases ?? "",
     loadCombinations: d.loadCombinations ?? "",
-    pointLoads: d.pointLoads ?? "",
+    pointLoads: pointLoadTables.pointLoads,
+    axialLoads: pointLoadTables.axialLoads,
+    pointMoments: pointLoadTables.pointMoments,
     distLoads: d.distLoads ?? "",
     fixity: d.fixity ?? "",
     pointSprings: d.pointSprings ?? "",
     uniformSprings: d.uniformSprings ?? "",
     hinges: d.hinges ?? "",
   };
+}
+
+function parsePointLoadAuthoringRow(
+  r: string[],
+  defaultCase: string,
+): PointLoadRow {
+  if (r.length >= 4) {
+    return [
+      Number(r[0]) || 0,
+      Number(r[1]) || 0,
+      Number(r[2]) || 0,
+      Number(r[3]) || 0,
+      r[4]?.trim() || defaultCase,
+    ];
+  }
+  return [
+    Number(r[0]) || 0,
+    0,
+    Number(r[1]) || 0,
+    0,
+    r[2]?.trim() || defaultCase,
+  ];
+}
+
+function splitPointLoadTables(d: Partial<Fields>): {
+  pointLoads: string;
+  axialLoads: string;
+  pointMoments: string;
+} {
+  const rows = parseRows(d.pointLoads ?? "");
+  const hasLegacyCombinedRows = rows.some((row) => row.length >= 4);
+  if (!hasLegacyCombinedRows) {
+    return {
+      pointLoads: d.pointLoads ?? "",
+      axialLoads: d.axialLoads ?? "",
+      pointMoments: d.pointMoments ?? "",
+    };
+  }
+
+  const defaultCase = parseRows(d.loadCases ?? "")[0]?.[0]?.trim() || "D";
+  const pointRows: string[][] = [];
+  const axialRows: string[][] = parseRows(d.axialLoads ?? "");
+  const momentRows: string[][] = parseRows(d.pointMoments ?? "");
+
+  for (const row of rows) {
+    if (row.length < 4) {
+      pointRows.push(row);
+      continue;
+    }
+    const node = row[0]?.trim() || "0";
+    const fx = row[1]?.trim() || "0";
+    const fy = row[2]?.trim() || "0";
+    const moment = row[3]?.trim() || "0";
+    const loadCase = row[4]?.trim() || defaultCase;
+    if (isNonzeroCell(fy)) pointRows.push([node, fy, loadCase]);
+    if (isNonzeroCell(fx)) axialRows.push([node, fx, loadCase]);
+    if (isNonzeroCell(moment)) momentRows.push([node, moment, loadCase]);
+  }
+
+  return {
+    pointLoads: serializeRows(pointRows),
+    axialLoads: serializeRows(axialRows),
+    pointMoments: serializeRows(momentRows),
+  };
+}
+
+function isNonzeroCell(value: string): boolean {
+  const n = Number(value);
+  return Number.isFinite(n) && n !== 0;
 }

@@ -4,7 +4,11 @@ import { solve } from "../../lib/solver";
 import { solveRequest } from "../../lib/api/solve-request";
 import { combineLoads } from "../../lib/load-combinations";
 import { coerceAiDesignResult } from "../../lib/ai-design";
-import { DEFAULT_FIELDS } from "../../lib/design-fields";
+import {
+  DEFAULT_FIELDS,
+  fieldsFromDesign,
+  parseFields,
+} from "../../lib/design-fields";
 import { decryptSecret, encryptSecret } from "../../lib/secret-crypto";
 import { solverCases } from "./cases";
 import { assertCase } from "./helpers";
@@ -77,6 +81,34 @@ test("API solve auto-splits members at inline nodes for point loads and moments"
   );
   assert.equal(result.members.length, 4);
   assert.ok(Number.isFinite(result.peaks.M.value));
+});
+
+test("authoring load tables combine vertical, axial, and moment point loads", () => {
+  const parsed = parseFields({
+    ...DEFAULT_FIELDS,
+    pointLoads: "(1, -10, D)",
+    axialLoads: "(2, 4, L)",
+    pointMoments: "(3, 25, EQ)",
+  });
+
+  assert.deepEqual(parsed.pointLoads, [
+    [1, 0, -10, 0, "D"],
+    [2, 4, 0, 0, "L"],
+    [3, 0, 0, 25, "EQ"],
+  ]);
+});
+
+test("legacy combined point load rows split into the new authoring tables", () => {
+  const fields = fieldsFromDesign({
+    ...DEFAULT_FIELDS,
+    pointLoads: "(1, 5, -10, 25, D)\n(2, 0, -4, 0, L)",
+    axialLoads: "",
+    pointMoments: "",
+  });
+
+  assert.equal(fields.pointLoads, "(1, -10, D)\n(2, -4, L)");
+  assert.equal(fields.axialLoads, "(1, 5, D)");
+  assert.equal(fields.pointMoments, "(1, 25, D)");
 });
 
 test("AI design output coercion requires full design fields", () => {

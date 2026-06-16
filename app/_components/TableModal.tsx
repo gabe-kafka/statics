@@ -25,6 +25,7 @@ export function TableModal({
 }) {
   const rows = parseRows(value);
   const cols = spec.columns.length;
+  const hasLabels = hasRowLabels(spec);
   const displayRows = rows.map((row) =>
     Array.from({ length: cols }, (_, ci) =>
       toDisplayCell(spec, ci, row[ci] ?? ""),
@@ -239,6 +240,11 @@ export function TableModal({
               gridTemplateColumns: gridTemplateColumns(spec),
             }}
           >
+            {hasLabels && (
+              <div className="bg-bg px-1.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-dim">
+                NODE
+              </div>
+            )}
             {spec.columns.map((c) => (
               <div
                 key={c}
@@ -250,8 +256,13 @@ export function TableModal({
             <div className="bg-bg" />
             {rows.map((row, ri) => (
               <Fragment key={ri}>
+                {hasLabels && (
+                  <div className="bg-surface px-1.5 py-1 font-mono text-[11px] text-dim">
+                    N{ri + 1}
+                  </div>
+                )}
                 {spec.columns.map((_, ci) =>
-                  isLoadCombinationCaseCell(spec, ci) ? (
+                  isLoadCaseCell(spec, ci) ? (
                     <select
                       key={ci}
                       data-cell={`${ri}-${ci}`}
@@ -398,6 +409,8 @@ function isNodeReferenceCell(spec: InputSpec, ci: number): boolean {
   if (spec.key === "members") return ci === 0 || ci === 1;
   if (
     spec.key === "pointLoads" ||
+    spec.key === "axialLoads" ||
+    spec.key === "pointMoments" ||
     spec.key === "fixity" ||
     spec.key === "pointSprings"
   )
@@ -409,8 +422,20 @@ function isFixityCheckboxCell(spec: InputSpec, ci: number): boolean {
   return spec.key === "fixity" && ci >= 1 && ci <= 3;
 }
 
-function isLoadCombinationCaseCell(spec: InputSpec, ci: number): boolean {
-  return spec.key === "loadCombinations" && ci === 1;
+function isLoadCaseCell(spec: InputSpec, ci: number): boolean {
+  if (spec.key === "loadCombinations") return ci === 1;
+  if (
+    spec.key === "pointLoads" ||
+    spec.key === "axialLoads" ||
+    spec.key === "pointMoments"
+  )
+    return ci === 2;
+  if (spec.key === "distLoads") return ci === 3;
+  return false;
+}
+
+function hasRowLabels(spec: InputSpec): boolean {
+  return spec.key === "nodes";
 }
 
 function isTruthyCell(value: string): boolean {
@@ -438,11 +463,21 @@ function defaultRowForModal(
   loadCaseOptions: string[],
 ): string[] {
   const row = defaultRowForInput(spec, rowIndex);
-  if (spec.key !== "loadCombinations") return row;
+  if (
+    spec.key !== "loadCombinations" &&
+    spec.key !== "pointLoads" &&
+    spec.key !== "axialLoads" &&
+    spec.key !== "pointMoments" &&
+    spec.key !== "distLoads"
+  )
+    return row;
 
   const cases = caseOptionsForCell(loadCaseOptions, "").filter(Boolean);
-  if (cases.length === 0 || cases.includes(row[1])) return row;
-  return [row[0], cases[rowIndex % cases.length], row[2]];
+  const caseColumn = spec.key === "loadCombinations" ? 1 : row.length - 1;
+  if (cases.length === 0 || cases.includes(row[caseColumn])) return row;
+  const next = [...row];
+  next[caseColumn] = cases[rowIndex % cases.length];
+  return next;
 }
 
 function focusCell(
@@ -466,6 +501,9 @@ function modalWidth(spec: InputSpec): string {
 function gridTemplateColumns(spec: InputSpec): string {
   if (spec.key === "loadCombinations") {
     return "minmax(220px, 1fr) minmax(48px, 56px) minmax(54px, 64px) 20px";
+  }
+  if (hasRowLabels(spec)) {
+    return `minmax(44px, 52px) repeat(${spec.columns.length}, minmax(60px, 1fr)) 20px`;
   }
   return `repeat(${spec.columns.length}, minmax(60px, 1fr)) 20px`;
 }

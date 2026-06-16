@@ -74,6 +74,8 @@ type ApiState =
   | { kind: "error"; message: string };
 
 const SAMPLES_PER_MEMBER = 41;
+const LOAD_ARROW_MAX = 56;
+const LOAD_ARROW_MIN = 8;
 
 type DiagramSample = {
   station: number;
@@ -332,6 +334,17 @@ export function Diagrams({
   // ─── FBD ───────────────────────────────────────────────────────────
   const fbdLoads: React.ReactElement[] = [];
   const fbdLoadLabels: React.ReactElement[] = [];
+  const loadVisualMax = Math.max(
+    1e-6,
+    ...combinedLoads.pointLoads.flatMap(([, fx, fy]) => [
+      Math.abs(fx),
+      Math.abs(fy),
+    ]),
+    ...combinedLoads.distLoads.flatMap(([, wi, wj]) => [
+      Math.abs(wi),
+      Math.abs(wj),
+    ]),
+  );
 
   // Distributed loads: render each as a top bar + downward arrows onto beam.
   combinedLoads.distLoads.forEach(([mIdx, wi, wj], k) => {
@@ -344,10 +357,8 @@ export function Diagrams({
     const xb = frame.X(b[0]);
     const yaBeam = frame.Y(a[1]);
     const ybBeam = frame.Y(b[1]);
-    const wMax = Math.max(Math.abs(wi), Math.abs(wj), 1e-6);
-    const SCALE = Math.min(55, 30 * (1 + wMax / 6));
-    const ha = (Math.abs(wi) / wMax) * SCALE;
-    const hb = (Math.abs(wj) / wMax) * SCALE;
+    const ha = scaledLoadArrowLength(wi, loadVisualMax);
+    const hb = scaledLoadArrowLength(wj, loadVisualMax);
     const y_a = yaBeam - ha - 2;
     const y_b = ybBeam - hb - 2;
 
@@ -423,8 +434,8 @@ export function Diagrams({
     if (fx === 0 && fy === 0 && moment === 0) return;
     const cx = frame.X(nodes[n][0]);
     const cy = frame.Y(nodes[n][1]);
-    const L = 40;
     if (fy !== 0) {
+      const L = scaledLoadArrowLength(fy, loadVisualMax);
       const down = fy < 0;
       const tipY = down ? cy - 3 : cy + 3;
       const tailY = down ? tipY - L : tipY + L;
@@ -450,6 +461,7 @@ export function Diagrams({
       );
     }
     if (fx !== 0) {
+      const L = scaledLoadArrowLength(fx, loadVisualMax);
       const right = fx > 0;
       const tipX = right ? cx + 3 : cx - 3;
       const tailX = right ? tipX - L : tipX + L;
@@ -1610,6 +1622,13 @@ function LoadLabel({
       </text>
     </g>
   );
+}
+
+function scaledLoadArrowLength(value: number, max: number): number {
+  const magnitude = Math.abs(value);
+  if (magnitude < 1e-9) return 0;
+  const ratio = Math.min(1, magnitude / Math.max(max, 1e-9));
+  return Math.max(LOAD_ARROW_MIN, ratio * LOAD_ARROW_MAX);
 }
 
 function Arrow({

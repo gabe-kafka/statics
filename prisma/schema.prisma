@@ -68,6 +68,8 @@ model Design {
   loadCases        String   @default("")
   loadCombinations String   @default("")
   pointLoads       String   @default("")
+  axialLoads       String   @default("")
+  pointMoments     String   @default("")
   distLoads        String   @default("")
   fixity           String   @default("")
   pointSprings     String   @default("")

@@ -33,7 +33,7 @@ export const GALLERY_EXAMPLES: readonly GalleryExample[] = [
     fields: fields({
       nodes: "(0, 0)\n(5, 0)\n(10, 0)",
       members: "(0, 1)\n(1, 2)",
-      pointLoads: "(1, 0, -10, 0)",
+      pointLoads: "(1, -10, D)",
       distLoads: "",
       fixity: "(0, 1, 1, 0)\n(2, 0, 1, 0)",
       hinges: "",
@@ -84,7 +84,7 @@ export const GALLERY_EXAMPLES: readonly GalleryExample[] = [
     fields: fields({
       nodes: "(0, 0)\n(10, 0)",
       members: "(0, 1)",
-      pointLoads: "(1, 0, -10, 0)",
+      pointLoads: "(1, -10, D)",
       distLoads: "",
       fixity: "(0, 1, 1, 1)",
       hinges: "",
@@ -120,7 +120,7 @@ export const GALLERY_EXAMPLES: readonly GalleryExample[] = [
       members: "(0, 1)",
       loadCases: "(D, Dead)\n(L, Live)",
       loadCombinations: "(SERVICE, D, 1)",
-      pointLoads: "(1, 0, -20, 0, D)",
+      pointLoads: "(1, -20, D)",
       distLoads: "(0, -0.75, -0.75, D)",
       fixity: "(0, 1, 0, 0)",
       uniformSprings: "(0, 5)",

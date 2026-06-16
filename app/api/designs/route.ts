@@ -28,6 +28,8 @@ export async function POST(req: Request) {
     loadCases?: string;
     loadCombinations?: string;
     pointLoads?: string;
+    axialLoads?: string;
+    pointMoments?: string;
     distLoads?: string;
     fixity?: string;
     pointSprings?: string;
@@ -45,6 +47,8 @@ export async function POST(req: Request) {
     loadCases: body.loadCases ?? "",
     loadCombinations: body.loadCombinations ?? "",
     pointLoads: body.pointLoads ?? "",
+    axialLoads: body.axialLoads ?? "",
+    pointMoments: body.pointMoments ?? "",
     distLoads: body.distLoads ?? "",
     fixity: body.fixity ?? "",
     pointSprings: body.pointSprings ?? "",
