@@ -76,6 +76,9 @@ type ApiState =
 const SAMPLES_PER_MEMBER = 41;
 const LOAD_ARROW_MAX = 56;
 const LOAD_ARROW_MIN = 8;
+const CONCRETE_BEAM_URL =
+  process.env.NEXT_PUBLIC_CONCRETE_BEAM_URL ??
+  "https://concrete-beam.vercel.app";
 
 type DiagramSample = {
   station: number;
@@ -89,6 +92,13 @@ type DiagramSample = {
 };
 
 type DiagramField = "r" | "v" | "m" | "t" | "d";
+
+type ConcreteDesignHandoff = {
+  href: string;
+  muPos: number;
+  muNeg: number;
+  vu: number;
+};
 
 export function Diagrams({
   nodes,
@@ -816,6 +826,18 @@ export function Diagrams({
       : null;
   const peaks = state.kind === "ok" ? state.data.peaks : null;
   const hasUniformSpringReactions = uniformSprings.some(([, k]) => k !== 0);
+  const concreteDesign = useMemo(
+    () =>
+      state.kind === "ok"
+        ? buildConcreteDesignHandoff(state.data, activeCombinationId)
+        : null,
+    [state, activeCombinationId],
+  );
+
+  const openConcreteDesign = () => {
+    if (!concreteDesign) return;
+    window.open(concreteDesign.href, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div
@@ -1010,6 +1032,24 @@ export function Diagrams({
           COMBO{" "}
           <span style={{ color: PALETTE.reaction }}>{activeCombinationId}</span>
         </span>
+        <button
+          type="button"
+          onClick={openConcreteDesign}
+          disabled={!concreteDesign}
+          className="h-6 border px-2 font-mono text-[10px] uppercase tracking-[0.08em] disabled:opacity-35"
+          style={{
+            background: "#000",
+            borderColor: concreteDesign ? PALETTE.load : PALETTE.dim,
+            color: concreteDesign ? PALETTE.load : PALETTE.dim,
+          }}
+          title={
+            concreteDesign
+              ? `Open simple concrete beam design: Mu+ ${fmt(concreteDesign.muPos)}, Mu- ${fmt(concreteDesign.muNeg)}, Vu ${fmt(concreteDesign.vu)}`
+              : "Solve the model before launching concrete design."
+          }
+        >
+          DESIGN CONCRETE BEAM
+        </button>
         <span style={{ color: PALETTE.dim }}>MATERIAL</span>
         <label className="flex items-center gap-2">
           <span>E</span>
@@ -1190,6 +1230,76 @@ function CorrectnessPanel({
       </PanelGroup>
     </div>
   );
+}
+
+function buildConcreteDesignHandoff(
+  data: SolveResponse,
+  combinationId: string,
+): ConcreteDesignHandoff {
+  let muPos = 0;
+  let muNeg = 0;
+  let vu = 0;
+  let muPosMember = 0;
+  let muNegMember = 0;
+  let vuMember = 0;
+  let muPosStation = 0;
+  let muNegStation = 0;
+  let vuStation = 0;
+
+  data.members.forEach((member, memberIndex) => {
+    member.samples.forEach((sample) => {
+      if (sample.M > muPos) {
+        muPos = sample.M;
+        muPosMember = memberIndex;
+        muPosStation = sample.s;
+      }
+      if (-sample.M > muNeg) {
+        muNeg = -sample.M;
+        muNegMember = memberIndex;
+        muNegStation = sample.s;
+      }
+      if (Math.abs(sample.V) > vu) {
+        vu = Math.abs(sample.V);
+        vuMember = memberIndex;
+        vuStation = sample.s;
+      }
+    });
+  });
+
+  const params = new URLSearchParams({
+    source: "statics",
+    mode: "simple",
+    combo: combinationId,
+    muPos: handoffNumber(muPos),
+    muNeg: handoffNumber(muNeg),
+    vu: handoffNumber(vu),
+    muPosMember: String(muPosMember + 1),
+    muNegMember: String(muNegMember + 1),
+    vuMember: String(vuMember + 1),
+    muPosStation: handoffNumber(muPosStation),
+    muNegStation: handoffNumber(muNegStation),
+    vuStation: handoffNumber(vuStation),
+  });
+  return {
+    href: `${concreteBeamBaseUrl()}?${params.toString()}`,
+    muPos,
+    muNeg,
+    vu,
+  };
+}
+
+function concreteBeamBaseUrl(): string {
+  if (typeof window === "undefined") return CONCRETE_BEAM_URL;
+  const { hostname, protocol } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return `${protocol}//${hostname}:3001`;
+  }
+  return CONCRETE_BEAM_URL;
+}
+
+function handoffNumber(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  return String(Math.round(value * 1000) / 1000);
 }
 
 function PanelGroup({
