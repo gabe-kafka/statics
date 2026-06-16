@@ -88,6 +88,8 @@ export type SampleOut = {
   x: number;
   /** Global y-coordinate of this sample. */
   y: number;
+  /** Distributed spring reaction at this station; positive is local +y. */
+  R: number;
   V: number;
   M: number;
   theta: number;
@@ -116,6 +118,7 @@ export type PeakOut = {
 
 export type SvgOut = {
   fbd: string;
+  R: string;
   V: string;
   M: string;
   theta: string;

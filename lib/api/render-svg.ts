@@ -31,8 +31,8 @@ const PALETTE_DARK: Palette = {
   load: "#ffd100",
   support: "#4aa3ff",
   reaction: "#a6ff5a",
-  shear: "#ffd100",
-  moment: "#a6ff5a",
+  shear: "#3b82f6",
+  moment: "#3b82f6",
   theta: "#4aa3ff",
   delta: "#ff7aa2",
 };
@@ -48,8 +48,8 @@ const PALETTE_LIGHT: Palette = {
   load: "#d97706",
   support: "#0057ff",
   reaction: "#16a34a",
-  shear: "#d97706",
-  moment: "#16a34a",
+  shear: "#0057ff",
+  moment: "#0057ff",
   theta: "#0057ff",
   delta: "#be185d",
 };
@@ -61,7 +61,7 @@ function paletteFor(theme: SolveRequest["theme"]): Palette {
 const W = 880;
 const PAD = 48;
 
-type Plot = "fbd" | "V" | "M" | "theta" | "delta";
+type Plot = "fbd" | "R" | "V" | "M" | "theta" | "delta";
 
 const INCHES_PER_UNIT: Record<NonNullable<SolveRequest["lengthUnit"]>, number> = {
   in: 1,
@@ -92,15 +92,16 @@ export function renderSvg(
   const palette = paletteFor(req.theme);
 
   const fbd = renderFbd(req, res, ux, unit, uW, palette);
-  const V = renderCurve(res, X, stationEnds, "V", palette.shear, "V(x)", palette);
-  const M = renderCurve(res, X, stationEnds, "M", palette.moment, `M(x) [k·${unit}]`, palette, {
+  const R = renderCurve(res, X, stationEnds, "R", palette.shear, "R(l)", palette);
+  const V = renderCurve(res, X, stationEnds, "V", palette.shear, "V(l)", palette);
+  const M = renderCurve(res, X, stationEnds, "M", palette.moment, `M(l) [k·${unit}]`, palette, {
     valueScale: 1 / lenScale,
   });
-  const theta = renderCurve(res, X, stationEnds, "theta", palette.theta, "θ(x)", palette);
-  const delta = renderCurve(res, X, stationEnds, "delta", palette.delta, "Δ(x)", palette);
-  const all = renderAll(fbd, V, M, theta, delta, totalStation, X, ux, unit, palette);
+  const theta = renderCurve(res, X, stationEnds, "theta", palette.theta, "θ(l)", palette);
+  const delta = renderCurve(res, X, stationEnds, "delta", palette.delta, "Δ(l)", palette);
+  const all = renderAll(fbd, R, V, M, theta, delta, totalStation, X, ux, unit, palette);
 
-  return { fbd, V, M, theta, delta, all };
+  return { fbd, R, V, M, theta, delta, all };
 }
 
 function memberStationEnds(members: Pick<SolveResponse, "members">["members"]): number[] {
@@ -509,9 +510,9 @@ function renderFbd(
       );
     }
     if (moment !== 0) {
-      out.push(momentArrow(cx, cy - 18, 15, moment > 0, palette.load));
+      out.push(momentArrow(cx, cy, 15, moment > 0, palette.load));
       out.push(
-        `<text x="${cx + 20}" y="${cy - 26}" fill="${palette.load}" font-size="10">${escapeText(fmt(Math.abs(moment)))}</text>`,
+        `<text x="${cx + 20}" y="${cy - 18}" fill="${palette.load}" font-size="10">${escapeText(fmt(Math.abs(moment)))}</text>`,
       );
     }
   }
@@ -634,11 +635,11 @@ function renderFbd(
  * are deduped — usually the shared-node samples from two adjoining
  * members reading the same value at the same x.
  */
-type ExtremumField = "V" | "M" | "theta" | "delta";
+type ExtremumField = "R" | "V" | "M" | "theta" | "delta";
 function findExtrema<F extends ExtremumField>(
-  samples: { x: number; V: number; M: number; theta: number; delta: number }[],
+  samples: { x: number; R: number; V: number; M: number; theta: number; delta: number }[],
   field: F,
-): { x: number; V: number; M: number; theta: number; delta: number }[] {
+): { x: number; R: number; V: number; M: number; theta: number; delta: number }[] {
   if (samples.length === 0) return [];
   const max = Math.max(1e-12, ...samples.map((s) => Math.abs(s[field])));
   const valTol = 0.03 * max;
@@ -725,6 +726,7 @@ function renderCurve(
 
 function renderAll(
   fbd: string,
+  R: string,
   V: string,
   M: string,
   theta: string,
@@ -740,6 +742,7 @@ function renderAll(
     s.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
   const panels = [
     { svg: fbd, h: 220 },
+    { svg: R, h: 150 },
     { svg: V, h: 150 },
     { svg: M, h: 150 },
     { svg: theta, h: 130 },
@@ -759,7 +762,7 @@ function renderAll(
     );
   }
   parts.push(
-    `<text x="${W - PAD}" y="${tickY}" fill="${palette.dim}" font-size="9" text-anchor="end">s [${unitLbl}]</text>`,
+    `<text x="${W - PAD}" y="${tickY}" fill="${palette.dim}" font-size="9" text-anchor="end">l [${unitLbl}]</text>`,
   );
   return svgWrap(W, y + 18, parts.join(""), palette);
 }

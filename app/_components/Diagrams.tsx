@@ -42,8 +42,9 @@ const PALETTE = {
   load: "#dc2626",
   support: "#4aa3ff",
   reaction: "#a6ff5a",
-  shear: "#ffd100",
-  moment: "#a6ff5a",
+  result: "var(--accent)",
+  shear: "var(--accent)",
+  moment: "var(--accent)",
   theta: "#4aa3ff",
   delta: "#ff7aa2",
 };
@@ -211,6 +212,7 @@ export function Diagrams({
   const W = 880;
   const PAD = 48;
   const H_FBD = 180;
+  const H_R = 130;
   const H_V = 150;
   const H_M = 150;
   const H_BREAK = 44;
@@ -229,7 +231,16 @@ export function Diagrams({
   const X = (s: number) => PAD + (s / totalStation) * (W - 2 * PAD);
   const frame = projectFrame(nodes, W, H_FBD, 28);
 
-  type Sample = { station: number; x: number; y: number; v: number; m: number; t: number; d: number };
+  type Sample = {
+    station: number;
+    x: number;
+    y: number;
+    r: number;
+    v: number;
+    m: number;
+    t: number;
+    d: number;
+  };
   const samples: Sample[] = [];
   const reactions: ReactionOut[] =
     state.kind === "ok" ? state.data.reactions : [];
@@ -283,6 +294,7 @@ export function Diagrams({
           station: station0 + s.s,
           x: s.x,
           y: s.y,
+          r: s.R,
           v: s.V,
           m: s.M,
           t: s.theta,
@@ -292,16 +304,19 @@ export function Diagrams({
     });
   }
 
+  const rmax = Math.max(1e-6, ...samples.map((s) => Math.abs(s.r)));
   const vmax = Math.max(1e-6, ...samples.map((s) => Math.abs(s.v)));
   const mmax = Math.max(1e-6, ...samples.map((s) => Math.abs(s.m)));
   const tmax = Math.max(1e-6, ...samples.map((s) => Math.abs(s.t)));
   const dmax = Math.max(1e-6, ...samples.map((s) => Math.abs(s.d)));
 
-  // Layout offsets — TOP svg (FBD + V + M)
-  const H_TOP = H_FBD + GAP + H_V + GAP + H_M;
-  const yV0 = H_FBD + GAP;
+  // Layout offsets — TOP svg (FBD + R + V + M)
+  const H_TOP = H_FBD + GAP + H_R + GAP + H_V + GAP + H_M;
+  const yR0 = H_FBD + GAP;
+  const yRAxis = yR0 + H_R / 2;
+  const yV0 = H_FBD + GAP + H_R + GAP;
   const yVAxis = yV0 + H_V / 2;
-  const yM0 = H_FBD + GAP + H_V + GAP;
+  const yM0 = H_FBD + GAP + H_R + GAP + H_V + GAP;
   const yMAxis = yM0 + H_M / 2;
 
   // Layout offsets — BOTTOM svg (θ + Δ)
@@ -461,7 +476,7 @@ export function Diagrams({
         <MomentArrow
           key={`pl-${k}-m`}
           cx={cx}
-          cy={cy - 16}
+          cy={cy}
           r={14}
           positive={moment > 0}
           color={PALETTE.load}
@@ -471,7 +486,7 @@ export function Diagrams({
         <LoadLabel
           key={`pl-${k}-mt`}
           x={cx + 22}
-          y={cy - 28}
+          y={cy - 20}
           text={`M=${fmt(Math.abs(moment))} k-ft`}
           anchor="start"
         />,
@@ -675,7 +690,21 @@ export function Diagrams({
     />
   ));
 
-  // ─── V and M paths ─────────────────────────────────────────────────
+  // ─── R, V and M paths ──────────────────────────────────────────────
+  const rPath = samples
+    .map((s, i) => {
+      const x = X(s.station);
+      const y = yRAxis - (s.r / rmax) * (H_R / 2 - 12);
+      return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  const rFill = samples.length
+    ? `M ${X(samples[0].station).toFixed(1)} ${yRAxis} ${samples
+        .map((s) => `L ${X(s.station).toFixed(1)} ${(yRAxis - (s.r / rmax) * (H_R / 2 - 12)).toFixed(1)}`)
+        .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yRAxis} Z`
+    : "";
+
   const vPath = samples
     .map((s, i) => {
       const x = X(s.station);
@@ -703,13 +732,17 @@ export function Diagrams({
         .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yMAxis} Z`
     : "";
 
+  const rMaxSample = samples.reduce(
+    (a, b) => (Math.abs(b.r) > Math.abs(a.r) ? b : a),
+    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
+  );
   const vMaxSample = samples.reduce(
     (a, b) => (Math.abs(b.v) > Math.abs(a.v) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, v: 0, m: 0, t: 0, d: 0 },
+    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
   );
   const mMaxSample = samples.reduce(
     (a, b) => (Math.abs(b.m) > Math.abs(a.m) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, v: 0, m: 0, t: 0, d: 0 },
+    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
   );
 
   const tPath = samples
@@ -746,11 +779,11 @@ export function Diagrams({
 
   const tMaxSample = samples.reduce(
     (a, b) => (Math.abs(b.t) > Math.abs(a.t) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, v: 0, m: 0, t: 0, d: 0 },
+    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
   );
   const dMaxSample = samples.reduce(
     (a, b) => (Math.abs(b.d) > Math.abs(a.d) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, v: 0, m: 0, t: 0, d: 0 },
+    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
   );
   const equilibrium =
     state.kind === "ok"
@@ -775,6 +808,7 @@ export function Diagrams({
         <CorrectnessPanel
           equilibrium={equilibrium}
           peaks={peaks}
+          springReactionPeak={samples.length > 0 ? rMaxSample.r : 0}
           reactions={pointReactions}
           hasUniformSpringReactions={hasUniformSpringReactions}
         />
@@ -817,6 +851,41 @@ export function Diagrams({
         <g>
           <line
             x1={PAD}
+            y1={yRAxis}
+            x2={W - PAD}
+            y2={yRAxis}
+            stroke={PALETTE.dim}
+            strokeWidth={0.8}
+          />
+          {samples.length > 0 && (
+            <>
+              <path d={rFill} fill={PALETTE.result} fillOpacity={0.15} />
+              <path d={rPath} fill="none" stroke={PALETTE.result} strokeWidth={1.4} />
+            </>
+          )}
+          <SectionLabel
+            x={W - PAD}
+            y={yR0 + 12}
+            text="R(l)"
+            color={PALETTE.result}
+          />
+          {samples.length > 0 && (
+            <text
+              x={X(rMaxSample.station)}
+              y={yRAxis - (rMaxSample.r / rmax) * (H_R / 2 - 12) - 4}
+              fontSize={9}
+              fill={PALETTE.result}
+              textAnchor="middle"
+              fontFamily="var(--font-mono)"
+            >
+              {fmt(rMaxSample.r)}
+            </text>
+          )}
+        </g>
+
+        <g>
+          <line
+            x1={PAD}
             y1={yVAxis}
             x2={W - PAD}
             y2={yVAxis}
@@ -832,7 +901,7 @@ export function Diagrams({
           <SectionLabel
             x={W - PAD}
             y={yV0 + 12}
-            text="V(x)"
+            text="V(l)"
             color={PALETTE.shear}
           />
           {samples.length > 0 && (
@@ -867,7 +936,7 @@ export function Diagrams({
           <SectionLabel
             x={W - PAD}
             y={yM0 + 12}
-            text="M(x)"
+            text="M(l)"
             color={PALETTE.moment}
           />
           {samples.length > 0 && (
@@ -980,7 +1049,7 @@ export function Diagrams({
               <path d={tPath} fill="none" stroke={PALETTE.theta} strokeWidth={1.4} />
             </>
           )}
-          <SectionLabel x={W - PAD} y={yT0 + 12} text="θ(x)" color={PALETTE.theta} />
+          <SectionLabel x={W - PAD} y={yT0 + 12} text="θ(l)" color={PALETTE.theta} />
           {samples.length > 0 && (
             <text
               x={X(tMaxSample.station)}
@@ -1010,7 +1079,7 @@ export function Diagrams({
               <path d={dPath} fill="none" stroke={PALETTE.delta} strokeWidth={1.4} />
             </>
           )}
-          <SectionLabel x={W - PAD} y={yD0 + 12} text="Δ(x)" color={PALETTE.delta} />
+          <SectionLabel x={W - PAD} y={yD0 + 12} text="Δ(l)" color={PALETTE.delta} />
           {samples.length > 0 && (
             <text
               x={X(dMaxSample.station)}
@@ -1046,11 +1115,13 @@ export function Diagrams({
 function CorrectnessPanel({
   equilibrium,
   peaks,
+  springReactionPeak,
   reactions,
   hasUniformSpringReactions,
 }: {
   equilibrium: Equilibrium | null;
   peaks: SolveResponse["peaks"] | null;
+  springReactionPeak: number;
   reactions: ReactionOut[];
   hasUniformSpringReactions: boolean;
 }) {
@@ -1078,6 +1149,7 @@ function CorrectnessPanel({
       </PanelGroup>
 
       <PanelGroup title="PEAKS">
+        <Metric label="R" value={springReactionPeak} color={PALETTE.result} />
         <Metric label="V" value={peaks?.V.value ?? 0} color={PALETTE.shear} />
         <Metric label="M" value={peaks?.M.value ?? 0} color={PALETTE.moment} />
         <Metric label="θ" value={peaks?.theta.value ?? 0} color={PALETTE.theta} />

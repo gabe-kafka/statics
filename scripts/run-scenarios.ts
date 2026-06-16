@@ -69,8 +69,8 @@ function printScenario(name: string, request: SolveRequest, response: SolveRespo
     `  residuals: ΣFx=${fmt(eq.sumFx)}  ΣFy=${fmt(eq.sumFy)}  ΣM0=${fmt(eq.sumM0)}`,
   );
   console.log(
-    `  peaks: |V|=${fmt(response.peaks.V.value)} @ m${response.peaks.V.member} x=${fmt(response.peaks.V.sLocal)}  ` +
-      `|M|=${fmt(response.peaks.M.value)} @ m${response.peaks.M.member} x=${fmt(response.peaks.M.sLocal)}`,
+    `  peaks: |V|=${fmt(response.peaks.V.value)} @ m${response.peaks.V.member} l=${fmt(response.peaks.V.sLocal)}  ` +
+      `|M|=${fmt(response.peaks.M.value)} @ m${response.peaks.M.member} l=${fmt(response.peaks.M.sLocal)}`,
   );
   console.log(
     `         |θ|=${fmt(response.peaks.theta.value)}  |Δ|=${fmt(response.peaks.delta.value)}`,

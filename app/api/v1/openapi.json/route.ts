@@ -206,7 +206,7 @@ const SPEC = {
           },
           samplesPerMember: {
             type: "integer",
-            description: "Sample count per member for V/M/θ/Δ. Min 2, max 500.",
+            description: "Sample count per member for R/V/M/θ/Δ. Min 2, max 500.",
             default: 40,
             minimum: 2,
             maximum: 500,
@@ -266,6 +266,11 @@ const SPEC = {
                       s: { type: "number", description: "distance along member" },
                       x: { type: "number", description: "global x at this sample" },
                       y: { type: "number", description: "global y at this sample" },
+                      R: {
+                        type: "number",
+                        description:
+                          "distributed spring reaction at this station; positive is member local +y",
+                      },
                       V: { type: "number" },
                       M: { type: "number" },
                       theta: { type: "number" },
@@ -290,6 +295,7 @@ const SPEC = {
             description: "Present only when `include` contains `svg`.",
             properties: {
               fbd: { type: "string" },
+              R: { type: "string" },
               V: { type: "string" },
               M: { type: "string" },
               theta: { type: "string" },
