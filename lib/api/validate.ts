@@ -143,6 +143,18 @@ export function validate(req: SolveRequest): ApiError | null {
         `uniformSprings[${s}] must have finite non-negative k (force/deflection/length).`,
         { field: `uniformSprings[${s}].k`, value: spring.k },
       );
+    if (
+      spring.compressionOnly !== undefined &&
+      typeof spring.compressionOnly !== "boolean"
+    )
+      return err(
+        "invalid_input",
+        `uniformSprings[${s}].compressionOnly must be boolean when provided.`,
+        {
+          field: `uniformSprings[${s}].compressionOnly`,
+          value: spring.compressionOnly,
+        },
+      );
   }
 
   for (let h = 0; h < (req.hinges ?? []).length; h++) {

@@ -16,12 +16,20 @@ import type {
 } from "@/lib/design-fields";
 import {
   combineLoads,
+  combineLoadsForCase,
+  classifyCombination,
   combinationOptions,
   defaultCombinationId,
   hasCombination,
+  hasLoadCase,
+  loadCaseOptions as loadCaseIdOptions,
   resolveCombinationId,
+  resolveLoadCaseId,
+  type CombinedLoads,
 } from "@/lib/load-combinations";
 import type {
+  MemberOut,
+  PeakOut,
   ReactionOut,
   SampleOut,
   SolveRequest,
@@ -48,7 +56,6 @@ const PALETTE = {
   theta: "#4aa3ff",
   delta: "#ff7aa2",
 };
-
 type Props = {
   nodes: Vec2[];
   members: Member[];
@@ -69,8 +76,14 @@ type Props = {
 
 type ApiState =
   | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "ok"; data: SolveResponse }
+  | { kind: "loading"; label: string; targetCount: number }
+  | {
+      kind: "ok";
+      data: SolveResponse;
+      label: string;
+      isEnvelope: boolean;
+      runs: AnalysisRun[];
+    }
   | { kind: "error"; message: string };
 
 const SAMPLES_PER_MEMBER = 41;
@@ -93,12 +106,55 @@ type DiagramSample = {
 
 type DiagramField = "r" | "v" | "m" | "t" | "d";
 
+type LoadViewMode = "case" | "combo" | "envelope";
+
+type LoadTarget = {
+  kind: "case" | "combo";
+  id: string;
+  key: string;
+  label: string;
+};
+
+type EnvelopeDefinition = {
+  id: string;
+  label: string;
+  targetKeys: string[];
+  builtin?: boolean;
+};
+
+type AnalysisRun = {
+  target: LoadTarget;
+  data: SolveResponse;
+  combinedLoads: CombinedLoads;
+};
+
 type ConcreteDesignHandoff = {
   href: string;
   muPos: number;
   muNeg: number;
   vu: number;
+  vMax: PeakValue;
+  vMin: PeakValue;
+  mMax: PeakValue;
+  mMin: PeakValue;
 };
+
+type PeakValue = {
+  value: number;
+  member: number;
+  station: number;
+};
+
+const EMPTY_LOADS: CombinedLoads = { pointLoads: [], distLoads: [] };
+const EMPTY_ENVELOPE: EnvelopeDefinition = {
+  id: "env:empty",
+  label: "Empty envelope",
+  targetKeys: [],
+  builtin: true,
+};
+const CASE_PREFIX = "case:";
+const COMBO_PREFIX = "combo:";
+const CUSTOM_ENVELOPE_STORAGE_KEY = "statics.customEnvelopes.v1";
 
 export function Diagrams({
   nodes,
@@ -119,96 +175,202 @@ export function Diagrams({
 }: Props) {
   const [state, setState] = useState<ApiState>({ kind: "idle" });
   const [runId, setRunId] = useState(0);
+  const [viewMode, setViewMode] = useState<LoadViewMode>("combo");
+  const [selectedCaseId, setSelectedCaseId] = useState(() =>
+    loadCaseIdOptions(loadCases)[0] ?? "D",
+  );
   const [selectedCombinationId, setSelectedCombinationId] = useState(() =>
     defaultCombinationId(loadCombinations),
   );
+  const [selectedEnvelopeId, setSelectedEnvelopeId] = useState("env:all");
+  const [customEnvelopes, setCustomEnvelopes] = useState<EnvelopeDefinition[]>(
+    [],
+  );
+  const [showConcreteDesignDialog, setShowConcreteDesignDialog] = useState(false);
   const reqIdRef = useRef(0);
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(CUSTOM_ENVELOPE_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as EnvelopeDefinition[];
+      if (!Array.isArray(parsed)) return;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCustomEnvelopes(parsed.filter(isEnvelopeDefinition));
+    } catch {
+      // Ignore unreadable local drafts.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CUSTOM_ENVELOPE_STORAGE_KEY,
+        JSON.stringify(customEnvelopes),
+      );
+    } catch {
+      // Ignore storage quota or private-mode failures.
+    }
+  }, [customEnvelopes]);
+  const caseOptions = useMemo(() => loadCaseIdOptions(loadCases), [loadCases]);
   const comboOptions = useMemo(
     () => combinationOptions(loadCombinations),
     [loadCombinations],
   );
+  const loadTargets = useMemo(
+    () => buildLoadTargets(caseOptions, comboOptions),
+    [caseOptions, comboOptions],
+  );
+  const envelopeOptions = useMemo(
+    () =>
+      buildEnvelopeOptions({
+        caseOptions,
+        comboOptions,
+        loadCombinations,
+        customEnvelopes,
+      }),
+    [caseOptions, comboOptions, loadCombinations, customEnvelopes],
+  );
+  const activeCaseId = hasLoadCase(loadCases, selectedCaseId)
+    ? selectedCaseId
+    : caseOptions[0] ?? "D";
   const activeCombinationId = hasCombination(loadCombinations, selectedCombinationId)
     ? selectedCombinationId
     : defaultCombinationId(loadCombinations);
-  const combinedLoads = useMemo(
+  const activeEnvelope = useMemo(
     () =>
-      combineLoads({
-        pointLoads,
-        distLoads,
-        loadCases,
-        loadCombinations,
-        combinationId: activeCombinationId,
+      envelopeOptions.find((envelope) => envelope.id === selectedEnvelopeId) ??
+      envelopeOptions[0] ??
+      EMPTY_ENVELOPE,
+    [envelopeOptions, selectedEnvelopeId],
+  );
+  const activeTargets = useMemo(
+    () =>
+      targetsForView({
+        viewMode,
+        activeCaseId,
+        activeCombinationId,
+        activeEnvelope,
+        loadTargets,
       }),
-    [pointLoads, distLoads, loadCases, loadCombinations, activeCombinationId],
+    [viewMode, activeCaseId, activeCombinationId, activeEnvelope, loadTargets],
+  );
+  const activeViewLabel = useMemo(
+    () => labelForView(viewMode, activeCaseId, activeCombinationId, activeEnvelope),
+    [viewMode, activeCaseId, activeCombinationId, activeEnvelope],
+  );
+  const displayLoads = useMemo(
+    () =>
+      activeTargets.length === 1
+        ? combineLoadsForTarget({
+            target: activeTargets[0],
+            pointLoads,
+            distLoads,
+            loadCases,
+            loadCombinations,
+          })
+        : EMPTY_LOADS,
+    [activeTargets, pointLoads, distLoads, loadCases, loadCombinations],
   );
 
-  const runCombination = () => {
-    const answer = window.prompt("which load comb do you want", activeCombinationId);
-    if (answer === null) return;
-    const next = answer.trim();
-    if (!next) return;
-    if (!hasCombination(loadCombinations, next)) {
-      window.alert(`Unknown load combination. Available: ${comboOptions.join(", ")}`);
-      return;
-    }
-    setSelectedCombinationId(resolveCombinationId(loadCombinations, next));
+  const rerunAnalysis = () => {
     setRunId((value) => value + 1);
   };
 
-  useEffect(() => {
-    const req: SolveRequest = {
-      nodes: nodes.map((n) => [n[0], n[1]]),
-      members: members.map(([i, j]) => ({ i, j, E, I, A })),
-      supports: fixity.map(([node, rx, ry, rm]) => ({
-        node,
-        Rx: !!rx,
-        Ry: !!ry,
-        Rm: !!rm,
-      })),
-      pointLoads: combinedLoads.pointLoads
-        .filter(([, fx, fy, moment = 0]) => fx !== 0 || fy !== 0 || moment !== 0)
-        .map(([node, Fx, Fy, M = 0]) => ({ node, Fx, Fy, M })),
-      distLoads: combinedLoads.distLoads.map(([member, wi, wj]) => ({
-        member,
-        wi,
-        wj,
-      })),
-      pointSprings: pointSprings
-        .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)
-        .map(([node, Kx, Ky, Km]) => ({ node, Kx, Ky, Km })),
-      uniformSprings: uniformSprings
-        .filter(([, k]) => k !== 0)
-        .map(([member, k]) => ({ member, k })),
-      hinges: hinges.map(([member, end]) => ({ member, end })),
-      samplesPerMember: SAMPLES_PER_MEMBER,
-      include: ["data"],
+  const createCustomEnvelope = () => {
+    const name = window.prompt("Envelope name", "CUSTOM");
+    if (name === null) return;
+    const label = name.trim();
+    if (!label) return;
+    const defaultTargets = loadTargets
+      .map((target) => `${target.kind}:${target.id}`)
+      .join(", ");
+    const answer = window.prompt(
+      "Targets to envelope, comma-separated. Use D, L, SERVICE, or prefixes like case:D and combo:SERVICE.",
+      defaultTargets,
+    );
+    if (answer === null) return;
+    const parsed = parseEnvelopeTargetInput(answer, loadTargets);
+    if (parsed.unknown.length > 0) {
+      window.alert(`Unknown target(s): ${parsed.unknown.join(", ")}`);
+      return;
+    }
+    if (parsed.targetKeys.length === 0) {
+      window.alert("Envelope needs at least one load case or load combo.");
+      return;
+    }
+    const envelope: EnvelopeDefinition = {
+      id: `custom:${Date.now()}`,
+      label,
+      targetKeys: parsed.targetKeys,
     };
+    setCustomEnvelopes((items) => [...items, envelope]);
+    setSelectedEnvelopeId(envelope.id);
+    setViewMode("envelope");
+  };
 
-    if (req.nodes.length === 0 || req.members.length === 0) {
+  useEffect(() => {
+    if (nodes.length === 0 || members.length === 0) {
       // Keeps stale solver output hidden when the current model is empty.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({ kind: "idle" });
+      return;
+    }
+    if (activeTargets.length === 0) {
+      setState({ kind: "error", message: "No load cases or combinations selected." });
       return;
     }
 
     const id = ++reqIdRef.current;
     const ctl = new AbortController();
     const timer = setTimeout(async () => {
-      setState({ kind: "loading" });
+      setState({
+        kind: "loading",
+        label: activeViewLabel,
+        targetCount: activeTargets.length,
+      });
       try {
-        const res = await fetch("/api/v1/solve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(req),
-          signal: ctl.signal,
-        });
-        const json = (await res.json()) as SolveResponse | ApiError;
+        const runs = await Promise.all(
+          activeTargets.map(async (target) => {
+            const targetLoads = combineLoadsForTarget({
+              target,
+              pointLoads,
+              distLoads,
+              loadCases,
+              loadCombinations,
+            });
+            const res = await fetch("/api/v1/solve", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(
+                buildSolveRequest({
+                  nodes,
+                  members,
+                  fixity,
+                  pointSprings,
+                  uniformSprings,
+                  hinges,
+                  E,
+                  I,
+                  A,
+                  combinedLoads: targetLoads,
+                }),
+              ),
+              signal: ctl.signal,
+            });
+            const json = (await res.json()) as SolveResponse | ApiError;
+            if (!json.ok) {
+              throw new Error(`${target.label}: ${formatApiError(json)}`);
+            }
+            return { target, data: json, combinedLoads: targetLoads };
+          }),
+        );
         if (id !== reqIdRef.current) return;
-        if (!json.ok) {
-          setState({ kind: "error", message: formatApiError(json) });
-          return;
-        }
-        setState({ kind: "ok", data: json });
+        setState({
+          kind: "ok",
+          data: runs.length === 1 ? runs[0].data : envelopeResponse(runs),
+          label: activeViewLabel,
+          isEnvelope: runs.length > 1,
+          runs,
+        });
       } catch (err) {
         if (id !== reqIdRef.current) return;
         if ((err as Error).name === "AbortError") return;
@@ -223,7 +385,12 @@ export function Diagrams({
   }, [
     nodes,
     members,
-    combinedLoads,
+    activeTargets,
+    activeViewLabel,
+    pointLoads,
+    distLoads,
+    loadCases,
+    loadCombinations,
     pointSprings,
     uniformSprings,
     fixity,
@@ -346,18 +513,18 @@ export function Diagrams({
   const fbdLoadLabels: React.ReactElement[] = [];
   const loadVisualMax = Math.max(
     1e-6,
-    ...combinedLoads.pointLoads.flatMap(([, fx, fy]) => [
+    ...displayLoads.pointLoads.flatMap(([, fx, fy]) => [
       Math.abs(fx),
       Math.abs(fy),
     ]),
-    ...combinedLoads.distLoads.flatMap(([, wi, wj]) => [
+    ...displayLoads.distLoads.flatMap(([, wi, wj]) => [
       Math.abs(wi),
       Math.abs(wj),
     ]),
   );
 
   // Distributed loads: render each as a top bar + downward arrows onto beam.
-  combinedLoads.distLoads.forEach(([mIdx, wi, wj], k) => {
+  displayLoads.distLoads.forEach(([mIdx, wi, wj], k) => {
     const m = members[mIdx];
     if (!m) return;
     const a = nodes[m[0]];
@@ -439,7 +606,7 @@ export function Diagrams({
     );
   });
 
-  combinedLoads.pointLoads.forEach(([n, fx, fy, moment = 0], k) => {
+  displayLoads.pointLoads.forEach(([n, fx, fy, moment = 0], k) => {
     if (!nodes[n]) return;
     if (fx === 0 && fy === 0 && moment === 0) return;
     const cx = frame.X(nodes[n][0]);
@@ -647,7 +814,7 @@ export function Diagrams({
   });
 
   const uniformSpringEls: React.ReactElement[] = [];
-  uniformSprings.forEach(([mIdx, k], springIdx) => {
+  uniformSprings.forEach(([mIdx, k, compressionOnly], springIdx) => {
     if (k === 0) return;
     const member = members[mIdx];
     if (!member) return;
@@ -663,6 +830,7 @@ export function Diagrams({
         y2={frame.Y(b[1])}
         midX={W / 2}
         k={k}
+        compressionOnly={!!compressionOnly}
         color={PALETTE.support}
       />,
     );
@@ -777,11 +945,6 @@ export function Diagrams({
         .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yMAxis} Z`
     : "";
 
-  const rMaxSample = samples.reduce(
-    (a, b) => (Math.abs(b.r) > Math.abs(a.r) ? b : a),
-    samples[0] ?? { station: 0, x: 0, y: 0, r: 0, v: 0, m: 0, t: 0, d: 0 },
-  );
-
   const tPath = samples
     .map((s, i) => {
       const x = X(s.station);
@@ -814,28 +977,22 @@ export function Diagrams({
         .join(" ")} L ${X(samples[samples.length - 1].station).toFixed(1)} ${yDAxis} Z`
     : "";
 
-  const equilibrium =
-    state.kind === "ok"
-      ? computeEquilibrium(
-          nodes,
-          members,
-          combinedLoads.pointLoads,
-          combinedLoads.distLoads,
-          reactions,
-        )
-      : null;
-  const peaks = state.kind === "ok" ? state.data.peaks : null;
-  const hasUniformSpringReactions = uniformSprings.some(([, k]) => k !== 0);
   const concreteDesign = useMemo(
     () =>
       state.kind === "ok"
-        ? buildConcreteDesignHandoff(state.data, activeCombinationId)
+        ? buildConcreteDesignHandoff(state.runs, state.label)
         : null,
-    [state, activeCombinationId],
+    [state],
   );
 
   const openConcreteDesign = () => {
     if (!concreteDesign) return;
+    setShowConcreteDesignDialog(true);
+  };
+
+  const enterConcreteDesign = () => {
+    if (!concreteDesign) return;
+    setShowConcreteDesignDialog(false);
     window.open(concreteDesign.href, "_blank", "noopener,noreferrer");
   };
 
@@ -844,14 +1001,161 @@ export function Diagrams({
       className="font-mono text-[10px]"
       style={{ background: PALETTE.bg, color: PALETTE.fg }}
     >
-      <ApiStatusPill state={state} />
-      {(equilibrium || peaks || pointReactions.length > 0) && (
-        <CorrectnessPanel
-          equilibrium={equilibrium}
-          peaks={peaks}
-          springReactionPeak={samples.length > 0 ? rMaxSample.r : 0}
-          reactions={pointReactions}
-          hasUniformSpringReactions={hasUniformSpringReactions}
+      <div
+        className="flex flex-wrap items-center gap-x-2 gap-y-2 border-b px-4 py-2 font-mono text-[10px] tabular-nums"
+        style={{
+          borderColor: "var(--border)",
+          color: PALETTE.fg,
+          background: "var(--surface)",
+        }}
+      >
+        <span
+          className="mr-1 uppercase tracking-[0.12em]"
+          style={{ color: "var(--muted)" }}
+        >
+          VIEW
+        </span>
+        <div className="flex flex-wrap items-center gap-px">
+          <LoadModeButton
+            active={viewMode === "case"}
+            label="CASE"
+            onClick={() => setViewMode("case")}
+          />
+          <LoadModeButton
+            active={viewMode === "combo"}
+            label="COMBO"
+            onClick={() => setViewMode("combo")}
+          />
+          <LoadModeButton
+            active={viewMode === "envelope"}
+            label="ENVELOPE"
+            onClick={() => setViewMode("envelope")}
+          />
+        </div>
+        {viewMode === "case" && (
+          <select
+            value={activeCaseId}
+            onChange={(e) =>
+              setSelectedCaseId(resolveLoadCaseId(loadCases, e.target.value))
+            }
+            className="h-7 min-w-24 border px-2 font-mono text-[10px] uppercase tracking-[0.08em]"
+            style={{
+              background: "var(--bg)",
+              borderColor: "var(--border)",
+              color: PALETTE.fg,
+            }}
+          >
+            {caseOptions.map((loadCase) => (
+              <option key={loadCase} value={loadCase}>
+                {loadCase}
+              </option>
+            ))}
+          </select>
+        )}
+        {viewMode === "combo" && (
+          <select
+            value={activeCombinationId}
+            onChange={(e) =>
+              setSelectedCombinationId(
+                resolveCombinationId(loadCombinations, e.target.value),
+              )
+            }
+            className="h-7 min-w-36 border px-2 font-mono text-[10px] uppercase tracking-[0.08em]"
+            style={{
+              background: "var(--bg)",
+              borderColor: "var(--border)",
+              color: PALETTE.fg,
+            }}
+          >
+            {comboOptions.map((combo) => (
+              <option key={combo} value={combo}>
+                {combo}
+              </option>
+            ))}
+          </select>
+        )}
+        {viewMode === "envelope" && (
+          <>
+            <select
+              value={activeEnvelope.id}
+              onChange={(e) => setSelectedEnvelopeId(e.target.value)}
+              className="h-7 min-w-44 border px-2 font-mono text-[10px] uppercase tracking-[0.08em]"
+              style={{
+                background: "var(--bg)",
+                borderColor: "var(--border)",
+                color: PALETTE.fg,
+              }}
+            >
+              {envelopeOptions.map((envelope) => (
+                <option key={envelope.id} value={envelope.id}>
+                  {envelope.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={createCustomEnvelope}
+              className="h-7 border px-2 font-mono text-[10px] uppercase tracking-[0.08em]"
+              style={{
+                background: "var(--bg)",
+                borderColor: "var(--border)",
+                color: PALETTE.fg,
+              }}
+            >
+              + CUSTOM
+            </button>
+          </>
+        )}
+        <span
+          className="flex h-7 items-center gap-2 border px-2 text-[10px] uppercase tracking-[0.08em]"
+          style={{
+            borderColor: "var(--border)",
+            background: "var(--surface)",
+            color: "var(--muted)",
+          }}
+        >
+          ACTIVE
+          <span className="tracking-[0.08em]" style={{ color: PALETTE.fg }}>
+            {activeViewLabel}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={rerunAnalysis}
+          className="ml-auto h-7 border px-2 font-mono text-[10px] uppercase tracking-[0.08em]"
+          style={{
+            background: "var(--bg)",
+            borderColor: "var(--border)",
+            color: PALETTE.fg,
+          }}
+          title={`Run ${activeViewLabel}`}
+        >
+          RUN
+        </button>
+        <button
+          type="button"
+          onClick={openConcreteDesign}
+          disabled={!concreteDesign}
+          className="min-h-7 border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] disabled:opacity-40"
+          style={{
+            background: "var(--bg)",
+            borderColor: "var(--border)",
+            color: concreteDesign ? PALETTE.fg : "var(--muted)",
+          }}
+          title={
+            concreteDesign
+              ? `Open simple concrete beam design: Mu+ ${fmt(concreteDesign.muPos)}, Mu- ${fmt(concreteDesign.muNeg)}, Vu ${fmt(concreteDesign.vu)}`
+              : "Solve the model before launching concrete design."
+          }
+        >
+          CLICK HERE TO DESIGN CONC BEAM BASED ON THESE VALUES
+        </button>
+      </div>
+      {showConcreteDesignDialog && concreteDesign && (
+        <ConcreteDesignDialog
+          design={concreteDesign}
+          onCancel={() => setShowConcreteDesignDialog(false)}
+          onEnter={enterConcreteDesign}
         />
       )}
       <svg
@@ -1007,81 +1311,53 @@ export function Diagrams({
       </svg>
 
       <div
-        className="flex items-center gap-4 border-y px-6 font-mono text-[11px]"
+        className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y px-6 py-2 font-mono text-[11px] tabular-nums"
         style={{
-          borderColor: PALETTE.dim,
-          height: H_BREAK,
+          borderColor: "var(--border)",
+          minHeight: H_BREAK,
           color: PALETTE.fg,
-          background: "#0b0b0b",
+          background: "var(--surface)",
         }}
       >
-        <button
-          type="button"
-          onClick={runCombination}
-          className="h-6 border px-2 font-mono text-[10px] uppercase tracking-[0.08em]"
-          style={{
-            background: "#000",
-            borderColor: PALETTE.dim,
-            color: PALETTE.fg,
-          }}
-          title={`Current load combination: ${activeCombinationId}`}
-        >
-          RUN
-        </button>
-        <span style={{ color: PALETTE.dim }}>
-          COMBO{" "}
-          <span style={{ color: PALETTE.reaction }}>{activeCombinationId}</span>
-        </span>
-        <button
-          type="button"
-          onClick={openConcreteDesign}
-          disabled={!concreteDesign}
-          className="h-6 border px-2 font-mono text-[10px] uppercase tracking-[0.08em] disabled:opacity-35"
-          style={{
-            background: "#000",
-            borderColor: concreteDesign ? PALETTE.load : PALETTE.dim,
-            color: concreteDesign ? PALETTE.load : PALETTE.dim,
-          }}
-          title={
-            concreteDesign
-              ? `Open simple concrete beam design: Mu+ ${fmt(concreteDesign.muPos)}, Mu- ${fmt(concreteDesign.muNeg)}, Vu ${fmt(concreteDesign.vu)}`
-              : "Solve the model before launching concrete design."
-          }
-        >
-          DESIGN CONCRETE BEAM
-        </button>
-        <span style={{ color: PALETTE.dim }}>MATERIAL</span>
-        <label className="flex items-center gap-2">
-          <span>E</span>
-          <input
-            type="number"
-            value={E}
-            onChange={(e) => onChangeE(Number(e.target.value) || 0)}
-            className="h-6 w-24 border px-2 font-mono text-[11px]"
-            style={{
-              background: "#000",
-              borderColor: PALETTE.dim,
-              color: PALETTE.fg,
-            }}
-          />
-          <span style={{ color: PALETTE.dim }}>ksi</span>
-        </label>
-        <label className="flex items-center gap-2">
-          <span>I</span>
-          <input
-            type="number"
-            value={I}
-            onChange={(e) => onChangeI(Number(e.target.value) || 0)}
-            className="h-6 w-24 border px-2 font-mono text-[11px]"
-            style={{
-              background: "#000",
-              borderColor: PALETTE.dim,
-              color: PALETTE.fg,
-            }}
-          />
-          <span style={{ color: PALETTE.dim }}>in⁴</span>
-        </label>
-        <span style={{ color: PALETTE.dim }} className="ml-auto">
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            className="text-[10px] uppercase tracking-[0.12em]"
+            style={{ color: "var(--muted)" }}
+          >
+            DEFLECTION MATERIAL
+          </span>
+          <label className="flex items-center gap-2">
+            <span style={{ color: PALETTE.fg }}>E</span>
+            <input
+              type="number"
+              value={E}
+              onChange={(e) => onChangeE(Number(e.target.value) || 0)}
+              className="h-8 w-28 border px-3 font-mono text-[11px]"
+              style={{
+                background: "var(--bg)",
+                borderColor: "var(--border)",
+                color: PALETTE.fg,
+              }}
+            />
+            <span style={{ color: "var(--muted)" }}>ksi</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <span style={{ color: PALETTE.fg }}>I</span>
+            <input
+              type="number"
+              value={I}
+              onChange={(e) => onChangeI(Number(e.target.value) || 0)}
+              className="h-8 w-28 border px-3 font-mono text-[11px]"
+              style={{
+                background: "var(--bg)",
+                borderColor: "var(--border)",
+                color: PALETTE.fg,
+              }}
+            />
+            <span style={{ color: "var(--muted)" }}>in⁴</span>
+          </label>
+        </div>
+        <span style={{ color: "var(--muted)" }} className="ml-auto text-[11px]">
           EI = {fmt(E * I)} k·in²
         </span>
       </div>
@@ -1168,124 +1444,610 @@ export function Diagrams({
   );
 }
 
-function CorrectnessPanel({
-  equilibrium,
-  peaks,
-  springReactionPeak,
-  reactions,
-  hasUniformSpringReactions,
-}: {
-  equilibrium: Equilibrium | null;
-  peaks: SolveResponse["peaks"] | null;
-  springReactionPeak: number;
-  reactions: ReactionOut[];
-  hasUniformSpringReactions: boolean;
-}) {
-  return (
-    <div
-      className="grid grid-cols-[1.15fr_1.2fr_1fr] gap-px border-b text-[10px]"
-      style={{ borderColor: PALETTE.dim, background: PALETTE.dim }}
-    >
-      <PanelGroup title="EQUILIBRIUM">
-        <Metric
-          label="ΣFx"
-          value={equilibrium?.sumFx ?? 0}
-          color={residualColor(equilibrium?.sumFx ?? 0)}
-        />
-        <Metric
-          label="ΣFy"
-          value={equilibrium?.sumFy ?? 0}
-          color={residualColor(equilibrium?.sumFy ?? 0)}
-        />
-        <Metric
-          label="ΣM0"
-          value={equilibrium?.sumM ?? 0}
-          color={residualColor(equilibrium?.sumM ?? 0)}
-        />
-      </PanelGroup>
-
-      <PanelGroup title="PEAKS">
-        <Metric label="R" value={springReactionPeak} color={PALETTE.result} />
-        <Metric label="V" value={peaks?.V.value ?? 0} color={PALETTE.shear} />
-        <Metric label="M" value={peaks?.M.value ?? 0} color={PALETTE.moment} />
-        <Metric label="θ" value={peaks?.theta.value ?? 0} color={PALETTE.theta} />
-        <Metric label="Δ" value={peaks?.delta.value ?? 0} color={PALETTE.delta} />
-      </PanelGroup>
-
-      <PanelGroup title="REACTIONS">
-        {reactions.length === 0 ? (
-          <span style={{ color: PALETTE.dim }}>
-            {hasUniformSpringReactions ? "see spring foundation" : "none"}
-          </span>
-        ) : (
-          reactions.map((r) => (
-            <span key={r.node} className="whitespace-nowrap">
-              <span style={{ color: PALETTE.dim }}>N{r.node + 1}</span>{" "}
-              <span style={{ color: PALETTE.reaction }}>
-                Rx {fmt(r.Rx)} Ry {fmt(r.Ry)} M {fmt(r.M)}
-              </span>
-            </span>
-          ))
-        )}
-      </PanelGroup>
-    </div>
-  );
-}
-
 function buildConcreteDesignHandoff(
-  data: SolveResponse,
-  combinationId: string,
+  runs: AnalysisRun[],
+  analysisLabel: string,
 ): ConcreteDesignHandoff {
-  let muPos = 0;
-  let muNeg = 0;
-  let vu = 0;
-  let muPosMember = 0;
-  let muNegMember = 0;
-  let vuMember = 0;
-  let muPosStation = 0;
-  let muNegStation = 0;
-  let vuStation = 0;
+  let vMax = emptyPeak();
+  let vMin = emptyPeak();
+  let mMax = emptyPeak();
+  let mMin = emptyPeak();
 
-  data.members.forEach((member, memberIndex) => {
-    member.samples.forEach((sample) => {
-      if (sample.M > muPos) {
-        muPos = sample.M;
-        muPosMember = memberIndex;
-        muPosStation = sample.s;
-      }
-      if (-sample.M > muNeg) {
-        muNeg = -sample.M;
-        muNegMember = memberIndex;
-        muNegStation = sample.s;
-      }
-      if (Math.abs(sample.V) > vu) {
-        vu = Math.abs(sample.V);
-        vuMember = memberIndex;
-        vuStation = sample.s;
-      }
+  runs.forEach((run) => {
+    run.data.members.forEach((member, memberIndex) => {
+      member.samples.forEach((sample) => {
+        if (sample.V > vMax.value) {
+          vMax = { value: sample.V, member: memberIndex, station: sample.s };
+        }
+        if (sample.V < vMin.value) {
+          vMin = { value: sample.V, member: memberIndex, station: sample.s };
+        }
+        if (sample.M > mMax.value) {
+          mMax = { value: sample.M, member: memberIndex, station: sample.s };
+        }
+        if (sample.M < mMin.value) {
+          mMin = { value: sample.M, member: memberIndex, station: sample.s };
+        }
+      });
     });
   });
+
+  const muPos = Math.max(0, mMax.value);
+  const muNeg = Math.max(0, -mMin.value);
+  const vuPeak =
+    Math.abs(vMin.value) > Math.abs(vMax.value) ? vMin : vMax;
+  const vu = Math.max(Math.abs(vMax.value), Math.abs(vMin.value));
 
   const params = new URLSearchParams({
     source: "statics",
     mode: "simple",
-    combo: combinationId,
+    combo: analysisLabel,
     muPos: handoffNumber(muPos),
     muNeg: handoffNumber(muNeg),
     vu: handoffNumber(vu),
-    muPosMember: String(muPosMember + 1),
-    muNegMember: String(muNegMember + 1),
-    vuMember: String(vuMember + 1),
-    muPosStation: handoffNumber(muPosStation),
-    muNegStation: handoffNumber(muNegStation),
-    vuStation: handoffNumber(vuStation),
+    vMax: handoffNumber(vMax.value),
+    vMin: handoffNumber(vMin.value),
+    mMax: handoffNumber(mMax.value),
+    mMin: handoffNumber(mMin.value),
+    vMaxMember: String(vMax.member + 1),
+    vMinMember: String(vMin.member + 1),
+    mMaxMember: String(mMax.member + 1),
+    mMinMember: String(mMin.member + 1),
+    vMaxStation: handoffNumber(vMax.station),
+    vMinStation: handoffNumber(vMin.station),
+    mMaxStation: handoffNumber(mMax.station),
+    mMinStation: handoffNumber(mMin.station),
+    muPosMember: String(mMax.member + 1),
+    muNegMember: String(mMin.member + 1),
+    vuMember: String(vuPeak.member + 1),
+    muPosStation: handoffNumber(mMax.station),
+    muNegStation: handoffNumber(mMin.station),
+    vuStation: handoffNumber(vuPeak.station),
   });
   return {
     href: `${concreteBeamBaseUrl()}?${params.toString()}`,
     muPos,
     muNeg,
     vu,
+    vMax,
+    vMin,
+    mMax,
+    mMin,
   };
+}
+
+function emptyPeak(): PeakValue {
+  return { value: 0, member: 0, station: 0 };
+}
+
+function ConcreteDesignDialog({
+  design,
+  onCancel,
+  onEnter,
+}: {
+  design: ConcreteDesignHandoff;
+  onCancel: () => void;
+  onEnter: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.35)" }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="concrete-design-title"
+    >
+      <div
+        className="w-full max-w-[640px] border p-4 font-mono text-[11px]"
+        style={{
+          background: "var(--bg)",
+          borderColor: "var(--border)",
+          color: PALETTE.fg,
+        }}
+      >
+        <div className="mb-4 flex items-baseline justify-between gap-4 border-b pb-3" style={{ borderColor: "var(--border)" }}>
+          <h2
+            id="concrete-design-title"
+            className="text-[11px] uppercase tracking-[0.12em]"
+            style={{ color: PALETTE.fg }}
+          >
+            CHECK SELECTED CONCRETE BEAM VALUES
+          </h2>
+          <span className="text-right uppercase tracking-[0.08em]" style={{ color: "var(--muted)" }}>
+            PEAKS FROM CURRENT VIEW
+          </span>
+        </div>
+
+        <div className="grid gap-px border text-[11px] tabular-nums" style={{ borderColor: "var(--border)", background: "var(--border)" }}>
+          <ConcretePeakRow label="Vmax" peak={design.vMax} unit="k" />
+          <ConcretePeakRow label="Vmin" peak={design.vMin} unit="k" />
+          <ConcretePeakRow label="Mmax" peak={design.mMax} unit="k-ft" />
+          <ConcretePeakRow label="Mmin" peak={design.mMin} unit="k-ft" />
+        </div>
+
+        <div className="mt-4 grid gap-px border text-[11px] tabular-nums" style={{ borderColor: "var(--border)", background: "var(--border)" }}>
+          <ConcreteDemandRow label="Mu+" value={design.muPos} unit="k-ft" />
+          <ConcreteDemandRow label="Mu-" value={design.muNeg} unit="k-ft" />
+          <ConcreteDemandRow label="Vu" value={design.vu} unit="k" />
+        </div>
+
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-8 border px-3 font-mono text-[10px] uppercase tracking-[0.08em]"
+            style={{
+              background: "var(--bg)",
+              borderColor: "var(--border)",
+              color: "var(--muted)",
+            }}
+          >
+            CANCEL
+          </button>
+          <button
+            type="button"
+            onClick={onEnter}
+            className="h-8 border px-3 font-mono text-[10px] uppercase tracking-[0.08em]"
+            style={{
+              background: "var(--subtle)",
+              borderColor: PALETTE.fg,
+              color: PALETTE.fg,
+            }}
+          >
+            ENTER BEAM DESIGN
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConcretePeakRow({
+  label,
+  peak,
+  unit,
+}: {
+  label: string;
+  peak: PeakValue;
+  unit: string;
+}) {
+  return (
+    <div className="grid grid-cols-[80px_1fr_160px] gap-3 bg-bg px-3 py-2">
+      <span className="uppercase tracking-[0.08em]" style={{ color: "var(--muted)" }}>
+        {label}
+      </span>
+      <span style={{ color: PALETTE.fg }}>
+        {fmt(peak.value)} {unit}
+      </span>
+      <span className="text-right" style={{ color: "var(--muted)" }}>
+        M{peak.member + 1} l={fmt(peak.station)}
+      </span>
+    </div>
+  );
+}
+
+function ConcreteDemandRow({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: number;
+  unit: string;
+}) {
+  return (
+    <div className="grid grid-cols-[80px_1fr] gap-3 bg-bg px-3 py-2">
+      <span className="uppercase tracking-[0.08em]" style={{ color: "var(--muted)" }}>
+        {label}
+      </span>
+      <span style={{ color: PALETTE.fg }}>
+        {fmt(value)} {unit}
+      </span>
+    </div>
+  );
+}
+
+function buildLoadTargets(caseOptions: string[], comboOptions: string[]): LoadTarget[] {
+  return [
+    ...caseOptions.map((id) => loadTarget("case", id)),
+    ...comboOptions.map((id) => loadTarget("combo", id)),
+  ];
+}
+
+function buildEnvelopeOptions({
+  caseOptions,
+  comboOptions,
+  loadCombinations,
+  customEnvelopes,
+}: {
+  caseOptions: string[];
+  comboOptions: string[];
+  loadCombinations: LoadCombination[];
+  customEnvelopes: EnvelopeDefinition[];
+}): EnvelopeDefinition[] {
+  const caseKeys = caseOptions.map((id) => loadTargetKey("case", id));
+  const comboKeys = comboOptions.map((id) => loadTargetKey("combo", id));
+  const serviceComboKeys = comboOptions
+    .filter(
+      (combo) =>
+        combo !== "ALL" &&
+        classifyCombination(loadCombinations, combo) === "service",
+    )
+    .map((id) => loadTargetKey("combo", id));
+  const strengthComboKeys = comboOptions
+    .filter(
+      (combo) =>
+        combo !== "ALL" &&
+        classifyCombination(loadCombinations, combo) === "strength",
+    )
+    .map((id) => loadTargetKey("combo", id));
+
+  const builtins: EnvelopeDefinition[] = [
+    {
+      id: "env:all",
+      label: "ENVELOPE - ALL",
+      targetKeys: uniqueStrings([...caseKeys, ...comboKeys]),
+      builtin: true,
+    },
+    {
+      id: "env:service",
+      label: "ENVELOPE - SERVICE",
+      targetKeys: uniqueStrings([
+        ...caseKeys,
+        ...(serviceComboKeys.length > 0 ? serviceComboKeys : []),
+      ]),
+      builtin: true,
+    },
+    {
+      id: "env:strength",
+      label: "ENVELOPE - STRENGTH",
+      targetKeys: uniqueStrings(
+        strengthComboKeys.length > 0
+          ? strengthComboKeys
+          : comboKeys.filter((key) => key !== loadTargetKey("combo", "ALL")),
+      ),
+      builtin: true,
+    },
+  ];
+
+  return [...builtins, ...customEnvelopes.filter(isEnvelopeDefinition)];
+}
+
+function targetsForView({
+  viewMode,
+  activeCaseId,
+  activeCombinationId,
+  activeEnvelope,
+  loadTargets,
+}: {
+  viewMode: LoadViewMode;
+  activeCaseId: string;
+  activeCombinationId: string;
+  activeEnvelope: EnvelopeDefinition;
+  loadTargets: LoadTarget[];
+}): LoadTarget[] {
+  if (viewMode === "case") return [loadTarget("case", activeCaseId)];
+  if (viewMode === "combo") return [loadTarget("combo", activeCombinationId)];
+  const byKey = new Map(loadTargets.map((target) => [target.key, target]));
+  return activeEnvelope.targetKeys
+    .map((key) => byKey.get(key))
+    .filter((target): target is LoadTarget => !!target);
+}
+
+function labelForView(
+  viewMode: LoadViewMode,
+  activeCaseId: string,
+  activeCombinationId: string,
+  activeEnvelope: EnvelopeDefinition,
+): string {
+  if (viewMode === "case") return `CASE ${activeCaseId}`;
+  if (viewMode === "combo") return `COMBO ${activeCombinationId}`;
+  return activeEnvelope.label;
+}
+
+function combineLoadsForTarget({
+  target,
+  pointLoads,
+  distLoads,
+  loadCases,
+  loadCombinations,
+}: {
+  target: LoadTarget;
+  pointLoads: PointLoadRow[];
+  distLoads: DistLoadRow[];
+  loadCases: LoadCase[];
+  loadCombinations: LoadCombination[];
+}): CombinedLoads {
+  if (target.kind === "case") {
+    return combineLoadsForCase({
+      pointLoads,
+      distLoads,
+      loadCases,
+      loadCaseId: target.id,
+    });
+  }
+  return combineLoads({
+    pointLoads,
+    distLoads,
+    loadCases,
+    loadCombinations,
+    combinationId: target.id,
+  });
+}
+
+function buildSolveRequest({
+  nodes,
+  members,
+  fixity,
+  pointSprings,
+  uniformSprings,
+  hinges,
+  E,
+  I,
+  A,
+  combinedLoads,
+}: {
+  nodes: Vec2[];
+  members: Member[];
+  fixity: Fixity[];
+  pointSprings: PointSpring[];
+  uniformSprings: UniformSpring[];
+  hinges: [number, "i" | "j"][];
+  E: number;
+  I: number;
+  A: number;
+  combinedLoads: CombinedLoads;
+}): SolveRequest {
+  return {
+    nodes: nodes.map((n) => [n[0], n[1]]),
+    members: members.map(([i, j]) => ({ i, j, E, I, A })),
+    supports: fixity.map(([node, rx, ry, rm]) => ({
+      node,
+      Rx: !!rx,
+      Ry: !!ry,
+      Rm: !!rm,
+    })),
+    pointLoads: combinedLoads.pointLoads
+      .filter(([, fx, fy, moment = 0]) => fx !== 0 || fy !== 0 || moment !== 0)
+      .map(([node, Fx, Fy, M = 0]) => ({ node, Fx, Fy, M })),
+    distLoads: combinedLoads.distLoads.map(([member, wi, wj]) => ({
+      member,
+      wi,
+      wj,
+    })),
+    pointSprings: pointSprings
+      .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)
+      .map(([node, Kx, Ky, Km]) => ({ node, Kx, Ky, Km })),
+    uniformSprings: uniformSprings
+      .filter(([, k]) => k !== 0)
+      .map(([member, k, compressionOnly]) => ({
+        member,
+        k,
+        compressionOnly: !!compressionOnly,
+      })),
+    hinges: hinges.map(([member, end]) => ({ member, end })),
+    samplesPerMember: SAMPLES_PER_MEMBER,
+    include: ["data"],
+  };
+}
+
+function envelopeResponse(runs: AnalysisRun[]): SolveResponse {
+  const base = runs[0].data;
+  const members: MemberOut[] = base.members.map((member, memberIndex) => ({
+    ...member,
+    endForces: envelopeEndForces(runs, memberIndex),
+    samples: member.samples.map((sample, sampleIndex) => ({
+      ...sample,
+      R: governingSampleValue(runs, memberIndex, sampleIndex, "R"),
+      V: governingSampleValue(runs, memberIndex, sampleIndex, "V"),
+      M: governingSampleValue(runs, memberIndex, sampleIndex, "M"),
+      theta: governingSampleValue(runs, memberIndex, sampleIndex, "theta"),
+      delta: governingSampleValue(runs, memberIndex, sampleIndex, "delta"),
+    })),
+  }));
+
+  return {
+    ok: true,
+    reactions: envelopeReactions(runs),
+    members,
+    peaks: computeEnvelopePeaks(members),
+    warnings: uniqueWarnings(runs),
+  };
+}
+
+function envelopeEndForces(
+  runs: AnalysisRun[],
+  memberIndex: number,
+): MemberOut["endForces"] {
+  return {
+    Ni: governingEndForceValue(runs, memberIndex, "Ni"),
+    Vi: governingEndForceValue(runs, memberIndex, "Vi"),
+    Mi: governingEndForceValue(runs, memberIndex, "Mi"),
+    Nj: governingEndForceValue(runs, memberIndex, "Nj"),
+    Vj: governingEndForceValue(runs, memberIndex, "Vj"),
+    Mj: governingEndForceValue(runs, memberIndex, "Mj"),
+  };
+}
+
+function envelopeReactions(runs: AnalysisRun[]): ReactionOut[] {
+  const nodes = new Set<number>();
+  runs.forEach((run) => run.data.reactions.forEach((r) => nodes.add(r.node)));
+  return [...nodes]
+    .sort((a, b) => a - b)
+    .map((node) => ({
+      node,
+      Rx: governingReactionValue(runs, node, "Rx"),
+      Ry: governingReactionValue(runs, node, "Ry"),
+      M: governingReactionValue(runs, node, "M"),
+    }));
+}
+
+function governingSampleValue(
+  runs: AnalysisRun[],
+  memberIndex: number,
+  sampleIndex: number,
+  field: keyof SampleOut,
+): number {
+  return governingValue(
+    runs
+      .map((run) => run.data.members[memberIndex]?.samples[sampleIndex]?.[field])
+      .filter(isFiniteNumber),
+  );
+}
+
+function governingEndForceValue(
+  runs: AnalysisRun[],
+  memberIndex: number,
+  field: keyof MemberOut["endForces"],
+): number {
+  return governingValue(
+    runs
+      .map((run) => run.data.members[memberIndex]?.endForces[field])
+      .filter(isFiniteNumber),
+  );
+}
+
+function governingReactionValue(
+  runs: AnalysisRun[],
+  node: number,
+  field: keyof Omit<ReactionOut, "node">,
+): number {
+  return governingValue(
+    runs
+      .map((run) => run.data.reactions.find((reaction) => reaction.node === node)?.[field])
+      .filter(isFiniteNumber),
+  );
+}
+
+function governingValue(values: number[]): number {
+  let best = 0;
+  for (const value of values) {
+    if (Math.abs(value) > Math.abs(best)) best = value;
+  }
+  return best;
+}
+
+function computeEnvelopePeaks(members: MemberOut[]): SolveResponse["peaks"] {
+  return {
+    V: peakFromMembers(members, "V"),
+    M: peakFromMembers(members, "M"),
+    theta: peakFromMembers(members, "theta"),
+    delta: peakFromMembers(members, "delta"),
+  };
+}
+
+function peakFromMembers(
+  members: MemberOut[],
+  field: "V" | "M" | "theta" | "delta",
+): PeakOut {
+  let peak: PeakOut = { value: 0, x: 0, y: 0, member: 0, sLocal: 0 };
+  members.forEach((member, memberIndex) => {
+    member.samples.forEach((sample) => {
+      const value = sample[field];
+      if (Math.abs(value) > Math.abs(peak.value)) {
+        peak = {
+          value,
+          x: sample.x,
+          y: sample.y,
+          member: memberIndex,
+          sLocal: sample.s,
+        };
+      }
+    });
+  });
+  return peak;
+}
+
+function uniqueWarnings(runs: AnalysisRun[]): SolveResponse["warnings"] {
+  const seen = new Set<string>();
+  const warnings = runs.flatMap((run) => run.data.warnings ?? []).filter((warning) => {
+    const key = `${warning.code}:${warning.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return warnings.length > 0 ? warnings : undefined;
+}
+
+function loadTarget(kind: LoadTarget["kind"], id: string): LoadTarget {
+  return {
+    kind,
+    id,
+    key: loadTargetKey(kind, id),
+    label: `${kind === "case" ? "CASE" : "COMBO"} ${id}`,
+  };
+}
+
+function loadTargetKey(kind: LoadTarget["kind"], id: string): string {
+  return `${kind === "case" ? CASE_PREFIX : COMBO_PREFIX}${normalizeLoadId(id)}`;
+}
+
+function parseEnvelopeTargetInput(
+  input: string,
+  targets: LoadTarget[],
+): { targetKeys: string[]; unknown: string[] } {
+  const byKey = new Map(targets.map((target) => [target.key, target]));
+  const unknown: string[] = [];
+  const targetKeys: string[] = [];
+  const tokens = input
+    .split(/[,\n]/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  for (const token of tokens) {
+    const explicit = targetKeyFromToken(token);
+    const target =
+      (explicit ? byKey.get(explicit) : undefined) ??
+      targets.find((candidate) => sameLoadId(candidate.id, token));
+    if (!target) {
+      unknown.push(token);
+      continue;
+    }
+    if (!targetKeys.includes(target.key)) targetKeys.push(target.key);
+  }
+
+  return { targetKeys, unknown };
+}
+
+function targetKeyFromToken(token: string): string | null {
+  const [prefix, ...rest] = token.split(":");
+  const id = rest.join(":").trim();
+  if (!id) return null;
+  const normalizedPrefix = prefix.trim().toLowerCase();
+  if (normalizedPrefix === "case") return loadTargetKey("case", id);
+  if (normalizedPrefix === "combo") return loadTargetKey("combo", id);
+  return null;
+}
+
+function isEnvelopeDefinition(value: unknown): value is EnvelopeDefinition {
+  if (!value || typeof value !== "object") return false;
+  const envelope = value as EnvelopeDefinition;
+  return (
+    typeof envelope.id === "string" &&
+    typeof envelope.label === "string" &&
+    Array.isArray(envelope.targetKeys) &&
+    envelope.targetKeys.every((key) => typeof key === "string")
+  );
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const out: string[] = [];
+  for (const value of values) {
+    if (value && !out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
+function sameLoadId(a: string, b: string): boolean {
+  return normalizeLoadId(a) === normalizeLoadId(b);
+}
+
+function normalizeLoadId(id: string): string {
+  return id.trim().toLowerCase();
 }
 
 function concreteBeamBaseUrl(): string {
@@ -1302,107 +2064,30 @@ function handoffNumber(value: number): string {
   return String(Math.round(value * 1000) / 1000);
 }
 
-function PanelGroup({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="min-w-0 bg-surface px-4 py-2">
-      <div
-        className="mb-1 uppercase tracking-[0.12em]"
-        style={{ color: PALETTE.dim }}
-      >
-        {title}
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1">{children}</div>
-    </div>
-  );
-}
-
-function Metric({
+function LoadModeButton({
+  active,
   label,
-  value,
-  color,
+  onClick,
 }: {
+  active: boolean;
   label: string;
-  value: number;
-  color: string;
+  onClick: () => void;
 }) {
   return (
-    <span className="whitespace-nowrap">
-      <span style={{ color: PALETTE.dim }}>{label}</span>{" "}
-      <span style={{ color }}>{fmt(value)}</span>
-    </span>
+    <button
+      type="button"
+      onClick={onClick}
+      className="h-7 border px-2 font-mono text-[10px] uppercase tracking-[0.08em]"
+      style={{
+        background: active ? "var(--subtle)" : "var(--bg)",
+        borderColor: active ? PALETTE.fg : "var(--border)",
+        color: PALETTE.fg,
+        fontWeight: 400,
+      }}
+    >
+      {label}
+    </button>
   );
-}
-
-type Equilibrium = {
-  sumFx: number;
-  sumFy: number;
-  sumM: number;
-};
-
-function computeEquilibrium(
-  nodes: Vec2[],
-  members: Member[],
-  pointLoads: [number, number, number, number][],
-  distLoads: [number, number, number][],
-  reactions: ReactionOut[],
-): Equilibrium {
-  let sumFx = 0;
-  let sumFy = 0;
-  let sumM = 0;
-
-  for (const [node, fx, fy, moment = 0] of pointLoads) {
-    const p = nodes[node];
-    if (!p) continue;
-    sumFx += fx;
-    sumFy += fy;
-    sumM += p[0] * fy - p[1] * fx + moment;
-  }
-
-  for (const [member, wi, wj] of distLoads) {
-    const ij = members[member];
-    if (!ij) continue;
-    const a = nodes[ij[0]];
-    const b = nodes[ij[1]];
-    if (!a || !b) continue;
-    const dx = b[0] - a[0];
-    const dy = b[1] - a[1];
-    const L = Math.hypot(dx, dy);
-    const fy = ((wi + wj) / 2) * L;
-    const denom = wi + wj;
-    const centroid =
-      Math.abs(denom) < 1e-12 ? 0.5 : (wi + 2 * wj) / (3 * denom);
-    const x = a[0] + dx * centroid;
-    sumFy += fy;
-    sumM += x * fy;
-  }
-
-  for (const r of reactions) {
-    const p = nodes[r.node];
-    if (!p) continue;
-    sumFx += r.Rx;
-    sumFy += r.Ry;
-    sumM += p[0] * r.Ry - p[1] * r.Rx + r.M;
-  }
-
-  return {
-    sumFx: cleanResidual(sumFx),
-    sumFy: cleanResidual(sumFy),
-    sumM: cleanResidual(sumM),
-  };
-}
-
-function cleanResidual(n: number): number {
-  return Math.abs(n) < 1e-8 ? 0 : n;
-}
-
-function residualColor(n: number): string {
-  return Math.abs(n) < 1e-6 ? PALETTE.reaction : "#ff7676";
 }
 
 function formatApiError(error: ApiError): string {
@@ -1451,53 +2136,6 @@ function projectFrame(
     X: (x: number) => ox + (x - xmin) * scale,
     Y: (y: number) => height - (oy + (y - ymin) * scale),
   };
-}
-
-function ApiStatusPill({ state }: { state: ApiState }) {
-  let label: string;
-  let color: string;
-  switch (state.kind) {
-    case "idle":
-      label = "POST /api/v1/solve · idle";
-      color = PALETTE.dim;
-      break;
-    case "loading":
-      label = "POST /api/v1/solve · solving…";
-      color = PALETTE.theta;
-      break;
-    case "ok":
-      label = `POST /api/v1/solve · 200 · ${state.data.members.length} member${
-        state.data.members.length === 1 ? "" : "s"
-      }`;
-      color = PALETTE.reaction;
-      break;
-    case "error":
-      label = `POST /api/v1/solve · ${state.message}`;
-      color = "#ff7676";
-      break;
-  }
-  return (
-    <div
-      className="flex items-center gap-2 border-b px-6 font-mono text-[10px]"
-      style={{
-        borderColor: PALETTE.dim,
-        height: 24,
-        background: "#0b0b0b",
-        color,
-      }}
-    >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 999,
-          background: color,
-          display: "inline-block",
-        }}
-      />
-      {label}
-    </div>
-  );
 }
 
 function SectionLabel({
@@ -1917,6 +2555,7 @@ function UniformSpringFoundation({
   y2,
   midX,
   k,
+  compressionOnly,
   color,
 }: {
   x1: number;
@@ -1925,6 +2564,7 @@ function UniformSpringFoundation({
   y2: number;
   midX: number;
   k: number;
+  compressionOnly: boolean;
   color: string;
 }) {
   const dx = x2 - x1;
@@ -2003,6 +2643,7 @@ function UniformSpringFoundation({
         fontFamily="var(--font-mono)"
       >
         k={fmt(k)}
+        {compressionOnly ? " C" : ""}
       </text>
     </g>
   );

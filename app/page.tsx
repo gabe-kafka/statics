@@ -271,6 +271,12 @@ export default function Home() {
     setActiveExampleId(null);
   }
 
+  function copyDesign() {
+    setDesignId(null);
+    setName(copyName(name));
+    setActiveExampleId(null);
+  }
+
   function loadExample(example: GalleryExample) {
     setDesignId(null);
     setName(example.title);
@@ -298,6 +304,7 @@ export default function Home() {
         onSaveAiApiKey={saveAiApiKey}
         onDeleteSavedAiApiKey={deleteSavedAiApiKey}
         onSave={save}
+        onCopy={copyDesign}
         onNew={newDesign}
         onLoad={load}
       />
@@ -379,4 +386,9 @@ export default function Home() {
       )}
     </main>
   );
+}
+
+function copyName(name: string): string {
+  const trimmed = name.trim();
+  return trimmed ? `${trimmed} copy` : "untitled copy";
 }

@@ -22,6 +22,7 @@ export function TopBar({
   onSaveAiApiKey,
   onDeleteSavedAiApiKey,
   onSave,
+  onCopy,
   onNew,
   onLoad,
 }: {
@@ -40,6 +41,7 @@ export function TopBar({
   onSaveAiApiKey: () => void;
   onDeleteSavedAiApiKey: () => void;
   onSave: () => void;
+  onCopy: () => void;
   onNew: () => void;
   onLoad: (id: string) => void;
 }) {
@@ -79,6 +81,15 @@ export function TopBar({
           className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent disabled:opacity-40"
         >
           {busy ? "..." : designId ? "SAVE" : "SAVE NEW"}
+        </button>
+        <button
+          type="button"
+          onClick={onCopy}
+          disabled={busy}
+          title="copy current design as an unsaved duplicate"
+          className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent disabled:opacity-40"
+        >
+          COPY
         </button>
         {designId && (
           <button

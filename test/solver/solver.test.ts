@@ -2,12 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { solve } from "../../lib/solver";
 import { solveRequest } from "../../lib/api/solve-request";
-import { combineLoads } from "../../lib/load-combinations";
+import {
+  classifyCombination,
+  combineLoads,
+  combineLoadsForCase,
+} from "../../lib/load-combinations";
 import { coerceAiDesignResult } from "../../lib/ai-design";
 import {
   DEFAULT_FIELDS,
   fieldsFromDesign,
   parseFields,
+  type LoadCombination,
 } from "../../lib/design-fields";
 import { decryptSecret, encryptSecret } from "../../lib/secret-crypto";
 import { solverCases } from "./cases";
@@ -50,6 +55,39 @@ test("load combinations scale load rows by case", () => {
   ]);
 });
 
+test("load cases isolate matching load rows without combination factors", () => {
+  const combined = combineLoadsForCase({
+    loadCases: [
+      ["D", "Dead"],
+      ["L", "Live"],
+    ],
+    loadCaseId: "L",
+    pointLoads: [
+      [1, 0, -10, 5, "D"],
+      [2, 3, -4, 0, "L"],
+    ],
+    distLoads: [
+      [0, -2, -2, "D"],
+      [1, -1, -3, "L"],
+    ],
+  });
+
+  assert.deepEqual(combined.pointLoads, [[2, 3, -4, 0]]);
+  assert.deepEqual(combined.distLoads, [[1, -1, -3]]);
+});
+
+test("load combinations classify service and strength envelopes", () => {
+  const combinations: LoadCombination[] = [
+    ["SERVICE", "D", 1],
+    ["SERVICE", "L", 1],
+    ["1.2D+1.6L", "D", 1.2],
+    ["1.2D+1.6L", "L", 1.6],
+  ];
+
+  assert.equal(classifyCombination(combinations, "SERVICE"), "service");
+  assert.equal(classifyCombination(combinations, "1.2D+1.6L"), "strength");
+});
+
 test("API solve auto-splits members at inline nodes for point loads and moments", () => {
   const result = solveRequest({
     nodes: [
@@ -81,6 +119,73 @@ test("API solve auto-splits members at inline nodes for point loads and moments"
   );
   assert.equal(result.members.length, 4);
   assert.ok(Number.isFinite(result.peaks.M.value));
+});
+
+test("uniform spring authoring supports compression-only checkbox", () => {
+  const parsed = parseFields({
+    ...DEFAULT_FIELDS,
+    uniformSprings: "(0, 5, 1)",
+  });
+
+  assert.deepEqual(parsed.uniformSprings, [[0, 5, true]]);
+});
+
+test("compression-only uniform spring releases when member lifts off", () => {
+  const baseInput = {
+    nodes: [
+      [0, 0],
+      [120, 0],
+    ] as [number, number][],
+    members: [[0, 1] as [number, number]],
+    fixity: [[0, 1, 1, 1] as [number, number, number, number]],
+    pointLoads: [[1, 0, 10] as [number, number, number]],
+    distLoads: [],
+  };
+
+  const withoutSpring = solve({ ...baseInput, uniformSprings: [] });
+  const compressionOnly = solve({
+    ...baseInput,
+    uniformSprings: [[0, 5, true]],
+  });
+  const linear = solve({
+    ...baseInput,
+    uniformSprings: [[0, 5, false]],
+  });
+
+  assert.equal(withoutSpring.ok, true);
+  assert.equal(compressionOnly.ok, true);
+  assert.equal(linear.ok, true);
+  if (!withoutSpring.ok || !compressionOnly.ok || !linear.ok) return;
+
+  const freeTip = withoutSpring.members[0].delta(120);
+  const compressionTip = compressionOnly.members[0].delta(120);
+  const linearTip = linear.members[0].delta(120);
+
+  assert.ok(freeTip > 0);
+  assert.ok(Math.abs(compressionTip - freeTip) < 1e-8);
+  assert.ok(linearTip < freeTip);
+});
+
+test("uniform spring reaction contributes to API shear recovery", () => {
+  const result = solveRequest({
+    nodes: [
+      [0, 0],
+      [120, 0],
+    ],
+    members: [{ i: 0, j: 1, E: 29000, I: 100, A: 10 }],
+    supports: [{ node: 0, Rx: true, Ry: true, Rm: true }],
+    pointLoads: [{ node: 1, Fx: 0, Fy: -10 }],
+    uniformSprings: [{ member: 0, k: 5, compressionOnly: true }],
+    samplesPerMember: 12,
+    include: ["data"],
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const samples = result.members[0].samples;
+  const maxReaction = Math.max(...samples.map((sample) => sample.R));
+  assert.ok(maxReaction > 0);
+  assert.ok(samples[6].V > samples[0].V);
 });
 
 test("authoring load tables combine vertical, axial, and moment point loads", () => {

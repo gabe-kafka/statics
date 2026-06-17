@@ -9,7 +9,11 @@ export type PointLoad = [node: number, Fx: number, Fy: number, M?: number];
 export type DistLoad = [member: number, wi: number, wj: number];
 export type Fixity = [node: number, Rx: number, Ry: number, Rm: number];
 export type PointSpring = [node: number, Kx: number, Ky: number, Km: number];
-export type UniformSpring = [member: number, k: number];
+export type UniformSpring = [
+  member: number,
+  k: number,
+  compressionOnly?: boolean,
+];
 export type MemberEndRelease = [member: number, end: "i" | "j"];
 
 export type SolveInput = {
@@ -249,6 +253,79 @@ function equivNodalLocal(qi: number, qj: number, L: number): number[] {
 }
 
 export function solve(inp: SolveInput): Solution {
+  const springs = inp.uniformSprings ?? [];
+  if (!springs.some(([, k, compressionOnly]) => k > 0 && compressionOnly)) {
+    return solveLinear(inp);
+  }
+
+  let active = springs.map(() => true);
+  let result = solveLinear(withActiveCompressionSprings(inp, active));
+
+  for (let iteration = 0; iteration < 8; iteration++) {
+    if (!result.ok) return result;
+    const next = springs.map((spring, index) => {
+      const [member, k, compressionOnly] = spring;
+      if (!(k > 0) || !compressionOnly) return true;
+      const memberResult = result.members[member];
+      return memberResult ? memberHasCompressionContact(memberResult) : false;
+    });
+    if (sameBooleanVector(active, next)) return result;
+    active = next;
+    result = solveLinear(withActiveCompressionSprings(inp, active));
+  }
+
+  return result;
+}
+
+function withActiveCompressionSprings(
+  inp: SolveInput,
+  active: boolean[],
+): SolveInput {
+  return {
+    ...inp,
+    uniformSprings: (inp.uniformSprings ?? []).map(
+      ([member, k, compressionOnly], index) =>
+        [
+          member,
+          compressionOnly && !active[index] ? 0 : k,
+          compressionOnly,
+        ] as UniformSpring,
+    ),
+  };
+}
+
+function memberHasCompressionContact(member: MemberResult): boolean {
+  let sumDelta = 0;
+  let count = 0;
+  for (let i = 0; i <= 12; i++) {
+    const s = (member.L * i) / 12;
+    sumDelta += member.delta(s);
+    count++;
+  }
+  return count > 0 && sumDelta / count < -1e-7;
+}
+
+function sameBooleanVector(a: boolean[], b: boolean[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function integrateSimpson(
+  f: (x: number) => number,
+  a: number,
+  b: number,
+  intervals: number,
+): number {
+  if (Math.abs(b - a) < 1e-12) return 0;
+  const n = Math.max(2, intervals + (intervals % 2));
+  const h = (b - a) / n;
+  let sum = f(a) + f(b);
+  for (let i = 1; i < n; i++) {
+    sum += (i % 2 === 0 ? 2 : 4) * f(a + i * h);
+  }
+  return (sum * h) / 3;
+}
+
+function solveLinear(inp: SolveInput): Solution {
   const EA = inp.EA ?? 29000 * 10;
   const EI = inp.EI ?? 29000 * 100;
   const N = inp.nodes.length;
@@ -271,6 +348,8 @@ export function solve(inp: SolveInput): Solution {
     released: number[];
     qi: number; // local-y load at i
     qj: number; // local-y load at j
+    springLinearK: number;
+    springCompressionK: number;
     EI: number;
   };
   const mpre: MPre[] = [];
@@ -290,8 +369,12 @@ export function solve(inp: SolveInput): Solution {
   }
 
   const springByMember = new Map<number, number>();
-  for (const [m, k] of inp.uniformSprings ?? []) {
+  const springLinearByMember = new Map<number, number>();
+  const springCompressionByMember = new Map<number, number>();
+  for (const [m, k, compressionOnly] of inp.uniformSprings ?? []) {
     springByMember.set(m, (springByMember.get(m) ?? 0) + k);
+    const map = compressionOnly ? springCompressionByMember : springLinearByMember;
+    map.set(m, (map.get(m) ?? 0) + k);
   }
 
   for (let mIdx = 0; mIdx < inp.members.length; mIdx++) {
@@ -347,6 +430,8 @@ export function solve(inp: SolveInput): Solution {
       released,
       qi,
       qj,
+      springLinearK: springLinearByMember.get(mIdx) ?? 0,
+      springCompressionK: springCompressionByMember.get(mIdx) ?? 0,
       EI: mEI,
     });
   }
@@ -487,24 +572,7 @@ export function solve(inp: SolveInput): Solution {
     const Nj = fInt[3];
     const Vj_end = fInt[4];
     const Mj_end = fInt[5];
-
     const { L, qi, qj, EI: memberEI } = m;
-    const intQ = (s: number) =>
-      qi * s + ((qj - qi) * s * s) / (2 * L);
-    const intIntQ = (s: number) =>
-      (qi * s * s) / 2 + ((qj - qi) * s * s * s) / (6 * L);
-    const V = (s: number): number => Vi_end + intQ(s);
-    // Internal bending moment at section s (sagging-positive convention),
-    // derived from the left-segment FBD:
-    //   ΣM about cut: Mi_end − s·Vi_end − intIntQ(s) + M(s) = 0
-    // Note the sign on Mi_end: it's the moment ON the member at end i in
-    // the FEA local frame (CCW+), but the internal bending moment we want
-    // expresses the moment that the right segment applies to the left
-    // segment's right face — which is opposite. Without the sign flip,
-    // M(s) on members downstream of a non-zero Mi_end gives wrong values
-    // (e.g. simply-supported beam reports M=−1800 at the roller instead
-    // of 0).
-    const M = (s: number): number => -Mi_end + Vi_end * s + intIntQ(s);
 
     // Local end displacements/rotations from the solved system.
     const vi = uL[1];
@@ -546,6 +614,32 @@ export function solve(inp: SolveInput): Solution {
     };
     const theta = (s: number): number => hermiteTheta(s) + thetaP(s);
     const delta = (s: number): number => hermiteV(s) + deltaP(s);
+    const springK = m.springLinearK + m.springCompressionK;
+    const qDistributed = (s: number): number =>
+      qi + ((qj - qi) * s) / L;
+    const qFoundation = (s: number): number => {
+      if (springK === 0) return 0;
+      const d = delta(s);
+      return -m.springLinearK * d + Math.max(0, -m.springCompressionK * d);
+    };
+    const qTotal = (s: number): number => qDistributed(s) + qFoundation(s);
+    const intQ = (s: number) =>
+      springK === 0
+        ? qi * s + ((qj - qi) * s * s) / (2 * L)
+        : integrateSimpson(qTotal, 0, s, 32);
+    const intIntQ = (s: number) =>
+      springK === 0
+        ? (qi * s * s) / 2 + ((qj - qi) * s * s * s) / (6 * L)
+        : integrateSimpson((x) => (s - x) * qTotal(x), 0, s, 32);
+    const V = (s: number): number => Vi_end + intQ(s);
+    // Internal bending moment at section s (sagging-positive convention),
+    // derived from the left-segment FBD:
+    //   ΣM about cut: Mi_end − s·Vi_end − ∫(s-x)q(x)dx + M(s) = 0
+    // Note the sign on Mi_end: it's the moment ON the member at end i in
+    // the FEA local frame (CCW+), but the internal bending moment we want
+    // expresses the moment that the right segment applies to the left
+    // segment's right face — which is opposite.
+    const M = (s: number): number => -Mi_end + Vi_end * s + intIntQ(s);
 
     members.push({
       L,

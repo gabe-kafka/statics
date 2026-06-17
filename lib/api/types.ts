@@ -13,6 +13,8 @@ export type SolveRequest = {
     member: number;
     /** Distributed transverse stiffness, e.g. kip/in/ft. */
     k: number;
+    /** When true, the foundation can push in compression but cannot pull in tension. */
+    compressionOnly?: boolean;
   }[];
   hinges?: {
     /** Preferred explicit member index. */

@@ -322,6 +322,7 @@ function uniformSpringFoundationSvg(
   x2: number,
   y2: number,
   k: number,
+  compressionOnly: boolean,
   color: string,
 ): string {
   const dx = x2 - x1;
@@ -377,7 +378,7 @@ function uniformSpringFoundationSvg(
     );
   }
   parts.push(
-    `<text x="${labelX}" y="${labelY}" fill="${color}" stroke="none" font-size="9" text-anchor="middle">k=${escapeText(fmt(k))}</text>`,
+    `<text x="${labelX}" y="${labelY}" fill="${color}" stroke="none" font-size="9" text-anchor="middle">k=${escapeText(fmt(k))}${compressionOnly ? " C" : ""}</text>`,
   );
 
   return `<g stroke="${color}" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">${parts.join("")}</g>`;
@@ -578,6 +579,7 @@ function renderFbd(
         frame.X(b[0]),
         frame.Y(b[1]),
         spring.k,
+        !!spring.compressionOnly,
         palette.support,
       ),
     );

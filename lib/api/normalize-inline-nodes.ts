@@ -199,7 +199,11 @@ function remapUniformSprings(
     }
 
     for (const segment of segments) {
-      out.push({ member: segment.member, k: spring.k });
+      out.push({
+        member: segment.member,
+        k: spring.k,
+        compressionOnly: spring.compressionOnly,
+      });
     }
   }
 

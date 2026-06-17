@@ -35,7 +35,11 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
           [s.node, s.Kx, s.Ky, s.Km] as [number, number, number, number],
       ),
       uniformSprings: (normalizedBody.uniformSprings ?? []).map(
-        (s) => [s.member, s.k] as [number, number],
+        (s) => [s.member, s.k, !!s.compressionOnly] as [
+          number,
+          number,
+          boolean,
+        ],
       ),
       fixity: normalizedBody.supports.map(
         (s) =>
@@ -72,12 +76,13 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
     };
   }
 
-  const uniformSpringKByMember = new Map<number, number>();
+  const uniformSpringLinearKByMember = new Map<number, number>();
+  const uniformSpringCompressionKByMember = new Map<number, number>();
   for (const spring of normalizedBody.uniformSprings ?? []) {
-    uniformSpringKByMember.set(
-      spring.member,
-      (uniformSpringKByMember.get(spring.member) ?? 0) + spring.k,
-    );
+    const map = spring.compressionOnly
+      ? uniformSpringCompressionKByMember
+      : uniformSpringLinearKByMember;
+    map.set(spring.member, (map.get(spring.member) ?? 0) + spring.k);
   }
 
   const memberOut: MemberOut[] = raw.members.map((mr, idx) => {
@@ -87,17 +92,20 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
     const xj = normalizedBody.nodes[j][0];
     const yj = normalizedBody.nodes[j][1];
     const samples: SampleOut[] = [];
-    const springK = uniformSpringKByMember.get(idx) ?? 0;
+    const linearSpringK = uniformSpringLinearKByMember.get(idx) ?? 0;
+    const compressionSpringK = uniformSpringCompressionKByMember.get(idx) ?? 0;
     for (let k = 0; k <= samplesPerMember; k++) {
       const s = (k / samplesPerMember) * mr.L;
       const x = xi + ((xj - xi) * k) / samplesPerMember;
       const y = yi + ((yj - yi) * k) / samplesPerMember;
       const delta = mr.delta(s);
+      const springReaction =
+        -linearSpringK * delta + Math.max(0, -compressionSpringK * delta);
       samples.push({
         s,
         x,
         y,
-        R: -springK * delta,
+        R: springReaction,
         V: mr.V(s),
         M: mr.M(s),
         theta: mr.theta(s),

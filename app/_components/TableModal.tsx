@@ -283,7 +283,7 @@ export function TableModal({
                         ),
                       )}
                     </select>
-                  ) : isFixityCheckboxCell(spec, ci) ? (
+                  ) : isCheckboxCell(spec, ci) ? (
                     <label
                       key={ci}
                       className="flex min-h-[28px] items-center justify-center bg-surface focus-within:bg-bg focus-within:outline-1 focus-within:outline-accent"
@@ -407,6 +407,7 @@ function shiftReferenceCell(
 
 function isNodeReferenceCell(spec: InputSpec, ci: number): boolean {
   if (spec.key === "members") return ci === 0 || ci === 1;
+  if (spec.key === "uniformSprings") return ci === 0;
   if (
     spec.key === "pointLoads" ||
     spec.key === "axialLoads" ||
@@ -418,7 +419,8 @@ function isNodeReferenceCell(spec: InputSpec, ci: number): boolean {
   return false;
 }
 
-function isFixityCheckboxCell(spec: InputSpec, ci: number): boolean {
+function isCheckboxCell(spec: InputSpec, ci: number): boolean {
+  if (spec.key === "uniformSprings") return ci === 2;
   return spec.key === "fixity" && ci >= 1 && ci <= 3;
 }
 
@@ -495,6 +497,7 @@ function focusCell(
 
 function modalWidth(spec: InputSpec): string {
   if (spec.key === "loadCombinations") return "min(620px, 95vw)";
+  if (spec.key === "uniformSprings") return "min(620px, 95vw)";
   return "min(560px, 95vw)";
 }
 

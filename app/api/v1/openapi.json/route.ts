@@ -45,7 +45,9 @@ const SPEC = {
                   { member: 1, wi: -3.5, wj: -5.64 },
                 ],
                 pointSprings: [{ node: 1, Kx: 0, Ky: 100, Km: 0 }],
-                uniformSprings: [{ member: 0, k: 5 }],
+                uniformSprings: [
+                  { member: 0, k: 5, compressionOnly: true },
+                ],
                 samplesPerMember: 40,
                 include: ["data"],
               },
@@ -186,6 +188,12 @@ const SPEC = {
                   type: "number",
                   minimum: 0,
                   description: "Distributed stiffness, e.g. kip/in/ft.",
+                },
+                compressionOnly: {
+                  type: "boolean",
+                  default: false,
+                  description:
+                    "When true, the foundation can push in compression but cannot pull in tension.",
                 },
               },
             },

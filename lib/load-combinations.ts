@@ -12,6 +12,8 @@ export type CombinedLoads = {
   distLoads: [number, number, number][];
 };
 
+export type LoadCombinationKind = "service" | "strength";
+
 export function combinationOptions(
   loadCombinations: LoadCombination[],
 ): string[] {
@@ -65,6 +67,100 @@ export function combineLoads({
   const defaultCase = loadCases[0]?.[0] ?? "D";
   const factors = factorsForCombination(loadCombinations, combinationId);
 
+  return combineLoadsWithFactors({
+    pointLoads,
+    distLoads,
+    defaultCase,
+    factors,
+  });
+}
+
+export function combineLoadsForCase({
+  pointLoads,
+  distLoads,
+  loadCases,
+  loadCaseId,
+}: {
+  pointLoads: PointLoadRow[];
+  distLoads: DistLoadRow[];
+  loadCases: LoadCase[];
+  loadCaseId: string;
+}): CombinedLoads {
+  const defaultCase = loadCases[0]?.[0] ?? "D";
+  const factors = new Map([[normalizeId(loadCaseId || defaultCase), 1]]);
+  return combineLoadsWithFactors({
+    pointLoads,
+    distLoads,
+    defaultCase,
+    factors,
+  });
+}
+
+export function loadCaseOptions(loadCases: LoadCase[]): string[] {
+  const options: string[] = [];
+  for (const [loadCase] of loadCases) {
+    const trimmed = loadCase.trim();
+    if (trimmed && !options.some((option) => sameId(option, trimmed))) {
+      options.push(trimmed);
+    }
+  }
+  return options.length > 0 ? options : ["D"];
+}
+
+export function hasLoadCase(loadCases: LoadCase[], candidate: string): boolean {
+  const normalized = candidate.trim();
+  return loadCaseOptions(loadCases).some((loadCase) => sameId(loadCase, normalized));
+}
+
+export function resolveLoadCaseId(
+  loadCases: LoadCase[],
+  candidate: string,
+): string {
+  const normalized = candidate.trim();
+  return (
+    loadCaseOptions(loadCases).find((loadCase) => sameId(loadCase, normalized)) ??
+    normalized
+  );
+}
+
+export function classifyCombination(
+  loadCombinations: LoadCombination[],
+  combinationId: string,
+): LoadCombinationKind {
+  const normalized = normalizeId(combinationId);
+  if (
+    normalized.includes("strength") ||
+    normalized.includes("lrfd") ||
+    normalized.includes("ult")
+  ) {
+    return "strength";
+  }
+  if (
+    normalized.includes("service") ||
+    normalized.includes("serv") ||
+    normalized.includes("asd")
+  ) {
+    return "service";
+  }
+
+  const rows = loadCombinations.filter(([combo]) => sameId(combo, combinationId));
+  if (rows.length === 0) return "service";
+  return rows.some(([, , factor]) => Math.abs(factor) > 1)
+    ? "strength"
+    : "service";
+}
+
+function combineLoadsWithFactors({
+  pointLoads,
+  distLoads,
+  defaultCase,
+  factors,
+}: {
+  pointLoads: PointLoadRow[];
+  distLoads: DistLoadRow[];
+  defaultCase: string;
+  factors: Map<string, number> | null;
+}): CombinedLoads {
   return {
     pointLoads: pointLoads
       .map(([node, fx, fy, moment, loadCase]) => {

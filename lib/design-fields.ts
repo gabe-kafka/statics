@@ -44,6 +44,11 @@ export type DistLoadRow = [
   wj: number,
   loadCase: string,
 ];
+export type UniformSpringRow = [
+  member: number,
+  k: number,
+  compressionOnly: boolean,
+];
 
 const DEFAULT_LOAD_CASE_ROWS = [
   ["D", "Dead"],
@@ -72,7 +77,7 @@ export type ParsedDesignFields = {
   pointLoads: PointLoadRow[];
   distLoads: DistLoadRow[];
   pointSprings: [number, number, number, number][];
-  uniformSprings: [number, number][];
+  uniformSprings: UniformSpringRow[];
   hinges: [number, "i" | "j"][];
 };
 
@@ -114,7 +119,7 @@ export const INPUTS: readonly InputSpec[] = [
   {
     key: "uniformSprings",
     label: "UNIFORM SPRINGS",
-    columns: ["member", "k/in/ft"],
+    columns: ["member", "k/in/ft", "compression only"],
   },
   { key: "hinges", label: "HINGES", columns: ["member", "end"] },
 ];
@@ -269,7 +274,12 @@ export function parseFields(fields: Fields): ParsedDesignFields {
         ] as [number, number, number, number],
     ),
     uniformSprings: parseRows(fields.uniformSprings).map(
-      (r) => [Number(r[0]) || 0, Number(r[1]) || 0] as [number, number],
+      (r) =>
+        [
+          Number(r[0]) || 0,
+          Number(r[1]) || 0,
+          isTruthyCell(r[2] ?? ""),
+        ] as UniformSpringRow,
     ),
     hinges: parseRows(fields.hinges).map(
       (r) => [Number(r[0]) || 0, r[1] === "j" ? "j" : "i"] as [number, "i" | "j"],
@@ -361,5 +371,10 @@ function splitPointLoadTables(d: Partial<Fields>): {
 
 function isNonzeroCell(value: string): boolean {
   const n = Number(value);
+  return Number.isFinite(n) && n !== 0;
+}
+
+function isTruthyCell(value: string): boolean {
+  const n = Number(value.trim());
   return Number.isFinite(n) && n !== 0;
 }
