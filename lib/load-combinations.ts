@@ -202,6 +202,9 @@ function factorsForCombination(
 ): Map<string, number> | null {
   if (sameId(combinationId, ALL_LOADS_COMBINATION)) return null;
 
+  const expressionFactors = factorsFromCombinationExpression(combinationId);
+  if (expressionFactors) return expressionFactors;
+
   const factors = new Map<string, number>();
   for (const [combo, loadCase, factor] of loadCombinations) {
     if (!sameId(combo, combinationId)) continue;
@@ -209,6 +212,30 @@ function factorsForCombination(
     factors.set(key, (factors.get(key) ?? 0) + factor);
   }
   return factors.size > 0 ? factors : null;
+}
+
+function factorsFromCombinationExpression(combinationId: string): Map<string, number> | null {
+  const compact = combinationId.replace(/\s+/g, "");
+  const formulaLike = /^[+-]?(?:\d|\.)/.test(compact) || /[+-]/.test(compact);
+  if (!formulaLike) return null;
+
+  const factors = new Map<string, number>();
+  const termPattern = /([+-]?)(?:(\d+(?:\.\d*)?|\.\d+)\*?)?([A-Za-z][A-Za-z0-9_]*)/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = termPattern.exec(compact))) {
+    if (match.index !== cursor) return null;
+    cursor = termPattern.lastIndex;
+    const sign = match[1] === "-" ? -1 : 1;
+    const factor = match[2] === undefined ? 1 : Number(match[2]);
+    const loadCase = match[3];
+    if (!Number.isFinite(factor) || !loadCase) return null;
+    const key = normalizeId(loadCase);
+    factors.set(key, (factors.get(key) ?? 0) + sign * factor);
+  }
+
+  if (cursor !== compact.length || factors.size === 0) return null;
+  return factors;
 }
 
 function factorForCase(factors: Map<string, number> | null, loadCase: string): number {

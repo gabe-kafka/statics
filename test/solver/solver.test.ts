@@ -76,6 +76,34 @@ test("load cases isolate matching load rows without combination factors", () => 
   assert.deepEqual(combined.distLoads, [[1, -1, -3, "L"]]);
 });
 
+test("formula-style load combination names define their own case factors", () => {
+  const combined = combineLoads({
+    loadCases: [
+      ["D", "Dead"],
+      ["L", "Live"],
+      ["EQ", "Earthquake"],
+    ],
+    loadCombinations: [
+      ["1.0D+0.525EQ+0.75L", "D", 1],
+      ["1.0D+0.525EQ+0.75L", "L", 0.525],
+      ["1.0D+0.525EQ+0.75L", "D", 0.75],
+    ],
+    combinationId: "1.0D+0.525EQ+0.75L",
+    pointLoads: [
+      [2, 0, -425, 0, "D"],
+      [2, 0, -256, 0, "L"],
+      [4, 0, -100, 0, "EQ"],
+    ],
+    distLoads: [],
+  });
+
+  assert.deepEqual(combined.pointLoads, [
+    [2, 0, -425, 0, "D"],
+    [2, 0, -192, 0, "L"],
+    [4, 0, -52.5, 0, "EQ"],
+  ]);
+});
+
 test("load combinations classify service and strength envelopes", () => {
   const combinations: LoadCombination[] = [
     ["SERVICE", "D", 1],
