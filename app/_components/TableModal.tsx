@@ -148,6 +148,85 @@ export function TableModal({
     }
   };
 
+  const selectionBounds = () => {
+    if (sel) {
+      return {
+        r1: Math.min(sel.a[0], sel.b[0]),
+        r2: Math.max(sel.a[0], sel.b[0]),
+        c1: Math.min(sel.a[1], sel.b[1]),
+        c2: Math.max(sel.a[1], sel.b[1]),
+      };
+    }
+    const active = activeCell();
+    if (!active) return null;
+    const [ri, ci] = active;
+    return { r1: ri, r2: ri, c1: ci, c2: ci };
+  };
+
+  const rangeText = ({
+    r1,
+    r2,
+    c1,
+    c2,
+  }: {
+    r1: number;
+    r2: number;
+    c1: number;
+    c2: number;
+  }) => {
+    const sub = displayRows.slice(r1, r2 + 1).map((r) => r.slice(c1, c2 + 1));
+    return rowsToTSV(sub);
+  };
+
+  const pasteCellsAt = (ri: number, ci: number, text: string): boolean => {
+    const grid = clipboardRows(text);
+    if (grid.length === 0) return false;
+    const next = rows.map((r) => r.slice());
+    for (let r = 0; r < grid.length; r++) {
+      const targetRi = ri + r;
+      if (!next[targetRi]) next[targetRi] = spec.columns.map(() => "");
+      for (let c = 0; c < grid[r].length; c++) {
+        const targetCi = ci + c;
+        if (targetCi < cols) {
+          next[targetRi][targetCi] = fromDisplayCell(
+            spec,
+            targetCi,
+            grid[r][c].trim(),
+          );
+        }
+      }
+      while (next[targetRi].length < cols) next[targetRi].push("");
+    }
+    onChange(serializeRows(next));
+    return true;
+  };
+
+  const onGridCopy = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!sel && hasPartialInputSelection()) return;
+    const bounds = selectionBounds();
+    if (!bounds) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", rangeText(bounds));
+    flash(
+      bounds.r1 === bounds.r2 && bounds.c1 === bounds.c2
+        ? "COPIED CELL"
+        : "COPIED RANGE",
+    );
+  };
+
+  const onGridPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (e.defaultPrevented) return;
+    const text = e.clipboardData.getData("text");
+    if (!text) return;
+    const bounds = selectionBounds();
+    if (!bounds) return;
+    if (!sel && !isTabularClipboardText(text) && isPlainTextInput(e.target)) {
+      return;
+    }
+    e.preventDefault();
+    if (pasteCellsAt(bounds.r1, bounds.c1, text)) flash("PASTED");
+  };
+
   const onCellKeyDown = (
     e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement>,
     ri: number,
@@ -183,28 +262,7 @@ export function TableModal({
     const text = e.clipboardData.getData("text");
     if (!text.includes("\t") && !text.includes("\n")) return;
     e.preventDefault();
-    const grid = text
-      .replace(/\r\n?/g, "\n")
-      .replace(/\n+$/, "")
-      .split("\n")
-      .map((l) => l.split("\t"));
-    const next = rows.map((r) => r.slice());
-    for (let r = 0; r < grid.length; r++) {
-      const targetRi = ri + r;
-      if (!next[targetRi]) next[targetRi] = spec.columns.map(() => "");
-      for (let c = 0; c < grid[r].length; c++) {
-        const targetCi = ci + c;
-        if (targetCi < cols) {
-          next[targetRi][targetCi] = fromDisplayCell(
-            spec,
-            targetCi,
-            grid[r][c].trim(),
-          );
-        }
-      }
-      while (next[targetRi].length < cols) next[targetRi].push("");
-    }
-    onChange(serializeRows(next));
+    if (pasteCellsAt(ri, ci, text)) flash("PASTED");
   };
 
   return (
@@ -241,6 +299,8 @@ export function TableModal({
           <div
             ref={gridRef}
             className="grid gap-px bg-border select-none"
+            onCopy={onGridCopy}
+            onPaste={onGridPaste}
             style={{
               gridTemplateColumns: gridTemplateColumns(spec),
             }}
@@ -498,6 +558,44 @@ function focusCell(
   if (!el) return;
   el.focus();
   if (el instanceof HTMLInputElement && el.type !== "checkbox") el.select();
+}
+
+function activeCell(): [number, number] | null {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement)) return null;
+  const cell = el.dataset.cell;
+  if (!cell) return null;
+  const [rowText, colText] = cell.split("-");
+  const ri = Number(rowText);
+  const ci = Number(colText);
+  if (!Number.isInteger(ri) || !Number.isInteger(ci)) return null;
+  return [ri, ci];
+}
+
+function hasPartialInputSelection(): boolean {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLInputElement) || el.type === "checkbox") return false;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  if (start === null || end === null || start === end) return false;
+  return end - start < el.value.length;
+}
+
+function clipboardRows(text: string): string[][] {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n+$/, "")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => line.split("\t"));
+}
+
+function isTabularClipboardText(text: string): boolean {
+  return text.includes("\t") || text.includes("\n");
+}
+
+function isPlainTextInput(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement && target.type !== "checkbox";
 }
 
 function modalWidth(spec: InputSpec): string {
