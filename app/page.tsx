@@ -10,6 +10,7 @@ import { TopBar, type DesignRow } from "./_components/TopBar";
 import {
   DEFAULT_FIELDS,
   INPUTS,
+  authoringRowCount,
   fieldsFromDesign,
   parseFields,
   parseRows,
@@ -357,7 +358,7 @@ export default function Home() {
 
         <aside className="flex w-44 flex-col overflow-y-auto border-l border-border">
           {INPUTS.map((spec) => {
-            const count = parseRows(fields[spec.key]).length;
+            const count = authoringRowCount(spec.key, fields[spec.key]);
             return (
               <button
                 key={spec.key}

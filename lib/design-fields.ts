@@ -232,6 +232,14 @@ export function groupLoadCombinationRows(rows: string[][]): string[][] {
   return out.map((row) => row.slice(0, LOAD_COMBINATION_COLUMNS.length));
 }
 
+export function authoringRowCount(key: InputKey, value: string): number {
+  const rows = parseRows(value);
+  if (key === "loadCombinations") {
+    return groupLoadCombinationRows(rows).length;
+  }
+  return rows.length;
+}
+
 export function parseFields(fields: Fields): ParsedDesignFields {
   const loadCases: LoadCase[] = parseRows(fields.loadCases).map((r) => [
     r[0]?.trim() || "D",

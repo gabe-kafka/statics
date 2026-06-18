@@ -224,7 +224,7 @@ export function TableModal({
           </span>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-dim">
-              {rows.length} x {cols}
+              {tableSizeLabel(spec, rows.length, cols)}
             </span>
             <button
               type="button"
@@ -504,6 +504,13 @@ function modalWidth(spec: InputSpec): string {
   if (spec.key === "loadCombinations") return "min(1280px, 98vw)";
   if (spec.key === "uniformSprings") return "min(620px, 95vw)";
   return "min(560px, 95vw)";
+}
+
+function tableSizeLabel(spec: InputSpec, rowCount: number, colCount: number): string {
+  if (spec.key === "loadCombinations") {
+    return `${rowCount} ${rowCount === 1 ? "combo" : "combos"}`;
+  }
+  return `${rowCount} x ${colCount}`;
 }
 
 function gridTemplateColumns(spec: InputSpec): string {

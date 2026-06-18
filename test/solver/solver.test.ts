@@ -10,6 +10,7 @@ import {
 import { coerceAiDesignResult } from "../../lib/ai-design";
 import {
   DEFAULT_FIELDS,
+  authoringRowCount,
   fieldsFromDesign,
   groupLoadCombinationRows,
   parseFields,
@@ -132,6 +133,17 @@ test("legacy load combination rows group into one wide authoring row", () => {
       ["1.2D+1.6L", "D", "1.2", "L", "1.6"],
     ],
   );
+});
+
+test("load combination authoring count reports combos instead of factor rows", () => {
+  const value =
+    "(SERVICE, D, 1)\n" +
+    "(SERVICE, L, 1)\n" +
+    "(1.2D+1.6L, D, 1.2)\n" +
+    "(1.2D+1.6L, L, 1.6)";
+
+  assert.equal(authoringRowCount("loadCombinations", value), 2);
+  assert.equal(authoringRowCount("pointLoads", "(1, -10, D)\n(2, -5, L)"), 2);
 });
 
 test("load combinations classify service and strength envelopes", () => {
