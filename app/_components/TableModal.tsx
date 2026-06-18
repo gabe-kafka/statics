@@ -3,7 +3,9 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { InputSpec } from "@/lib/design-fields";
 import {
+  LOAD_COMBINATION_SLOT_COUNT,
   defaultRowForInput,
+  groupLoadCombinationRows,
   parseRows,
   rowsToTSV,
   serializeRows,
@@ -23,8 +25,11 @@ export function TableModal({
   onChange: (v: string) => void;
   onClose: () => void;
 }) {
-  const rows = parseRows(value);
   const cols = spec.columns.length;
+  const rows =
+    spec.key === "loadCombinations"
+      ? groupLoadCombinationRows(parseRows(value))
+      : parseRows(value);
   const hasLabels = hasRowLabels(spec);
   const displayRows = rows.map((row) =>
     Array.from({ length: cols }, (_, ci) =>
@@ -245,9 +250,9 @@ export function TableModal({
                 NODE
               </div>
             )}
-            {spec.columns.map((c) => (
+            {spec.columns.map((c, ci) => (
               <div
-                key={c}
+                key={`${c}-${ci}`}
                 className="bg-bg px-1.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-dim"
               >
                 {c}
@@ -425,7 +430,7 @@ function isCheckboxCell(spec: InputSpec, ci: number): boolean {
 }
 
 function isLoadCaseCell(spec: InputSpec, ci: number): boolean {
-  if (spec.key === "loadCombinations") return ci === 1;
+  if (spec.key === "loadCombinations") return ci > 0 && ci % 2 === 1;
   if (
     spec.key === "pointLoads" ||
     spec.key === "axialLoads" ||
@@ -496,14 +501,14 @@ function focusCell(
 }
 
 function modalWidth(spec: InputSpec): string {
-  if (spec.key === "loadCombinations") return "min(620px, 95vw)";
+  if (spec.key === "loadCombinations") return "min(1280px, 98vw)";
   if (spec.key === "uniformSprings") return "min(620px, 95vw)";
   return "min(560px, 95vw)";
 }
 
 function gridTemplateColumns(spec: InputSpec): string {
   if (spec.key === "loadCombinations") {
-    return "minmax(220px, 1fr) minmax(48px, 56px) minmax(54px, 64px) 20px";
+    return `minmax(260px, 1.4fr) repeat(${LOAD_COMBINATION_SLOT_COUNT}, minmax(54px, 64px) minmax(54px, 64px)) 20px`;
   }
   if (hasRowLabels(spec)) {
     return `minmax(44px, 52px) repeat(${spec.columns.length}, minmax(60px, 1fr)) 20px`;

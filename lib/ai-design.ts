@@ -148,7 +148,8 @@ function buildUserInput(
         nodes: "(x, y)",
         members: "(i, j) zero-based node indexes",
         loadCases: "(case, label)",
-        loadCombinations: "(combo, case, factor)",
+        loadCombinations:
+          "(combo, case, factor, case, factor, ...) with up to 10 case/factor pairs per combo row",
         pointLoads: "(node, Fy, case) transverse/vertical point loads only",
         axialLoads: "(node, Fx, case) axial/horizontal point loads only",
         pointMoments: "(node, M, case) point moments only",
@@ -176,7 +177,7 @@ const SYSTEM_PROMPT = [
   "If the user asks for a single beam length, use nodes (0, 0) and (length, 0) unless context says otherwise.",
   "If the prompt introduces loads and no load case is given, use D.",
   "If load cases are missing, include D and L.",
-  "If load combinations are missing, include at least (SERVICE, D, 1).",
+  "If load combinations are missing, include at least (SERVICE, D, 1, L, 1).",
   "Return every table field as a newline-separated set of parenthesized rows, or an empty string when there are no rows.",
 ].join("\n");
 

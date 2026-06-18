@@ -55,17 +55,22 @@ const DEFAULT_LOAD_CASE_ROWS = [
   ["L", "Live"],
 ];
 
+export const LOAD_COMBINATION_SLOT_COUNT = 10;
+const LOAD_COMBINATION_COLUMNS = [
+  "combo",
+  ...Array.from({ length: LOAD_COMBINATION_SLOT_COUNT }, () => [
+    "case",
+    "factor",
+  ]).flat(),
+];
+
 const DEFAULT_LOAD_COMBINATION_ROWS = [
-  ["SERVICE", "D", "1"],
-  ["SERVICE", "L", "1"],
+  ["SERVICE", "D", "1", "L", "1"],
   ["1.4D", "D", "1.4"],
-  ["1.2D+1.6L", "D", "1.2"],
-  ["1.2D+1.6L", "L", "1.6"],
-  ["1.2D+1.0L", "D", "1.2"],
-  ["1.2D+1.0L", "L", "1"],
+  ["1.2D+1.6L", "D", "1.2", "L", "1.6"],
+  ["1.2D+1.0L", "D", "1.2", "L", "1"],
   ["0.9D", "D", "0.9"],
-  ["0.9D+1.0L", "D", "0.9"],
-  ["0.9D+1.0L", "L", "1"],
+  ["0.9D+1.0L", "D", "0.9", "L", "1"],
 ];
 
 export type ParsedDesignFields = {
@@ -88,7 +93,7 @@ export const INPUTS: readonly InputSpec[] = [
   {
     key: "loadCombinations",
     label: "LOAD COMBINATIONS",
-    columns: ["combo", "case", "factor"],
+    columns: LOAD_COMBINATION_COLUMNS,
   },
   {
     key: "pointLoads",
@@ -165,7 +170,7 @@ export function defaultRowForInput(spec: InputSpec, rowIndex: number): string[] 
     return (
       DEFAULT_LOAD_COMBINATION_ROWS[rowIndex] ?? [
         `COMBO ${rowIndex + 1}`,
-        rowIndex % 2 === 0 ? "D" : "L",
+        "D",
         "1",
       ]
     );
@@ -195,6 +200,36 @@ export function tsvToRows(s: string, cols: number): string[][] {
       while (cells.length < cols) cells.push("");
       return cells.slice(0, cols);
     });
+}
+
+export function groupLoadCombinationRows(rows: string[][]): string[][] {
+  const out: string[][] = [];
+  const byCombo = new Map<string, string[]>();
+
+  for (const row of rows) {
+    const combo = row[0]?.trim() || "SERVICE";
+    let grouped = byCombo.get(combo);
+    if (!grouped) {
+      grouped = [combo];
+      byCombo.set(combo, grouped);
+      out.push(grouped);
+    }
+
+    if (row.length <= 3) {
+      const loadCase = row[1]?.trim() ?? "";
+      const factor = row[2]?.trim() ?? "";
+      if (loadCase || factor) grouped.push(loadCase, factor);
+      continue;
+    }
+
+    for (let ci = 1; ci < row.length; ci += 2) {
+      const loadCase = row[ci]?.trim() ?? "";
+      const factor = row[ci + 1]?.trim() ?? "";
+      if (loadCase || factor) grouped.push(loadCase, factor);
+    }
+  }
+
+  return out.map((row) => row.slice(0, LOAD_COMBINATION_COLUMNS.length));
 }
 
 export function parseFields(fields: Fields): ParsedDesignFields {
@@ -237,14 +272,7 @@ export function parseFields(fields: Fields): ParsedDesignFields {
       (r) => [Number(r[0]) || 0, Number(r[1]) || 0] as [number, number],
     ),
     loadCases,
-    loadCombinations: parseRows(fields.loadCombinations).map(
-      (r) =>
-        [
-          r[0]?.trim() || "SERVICE",
-          r[1]?.trim() || defaultCase,
-          Number(r[2]) || 0,
-        ] as LoadCombination,
-    ),
+    loadCombinations: parseLoadCombinations(fields.loadCombinations, defaultCase),
     fixity: parseRows(fields.fixity).map(
       (r) =>
         [
@@ -285,6 +313,31 @@ export function parseFields(fields: Fields): ParsedDesignFields {
       (r) => [Number(r[0]) || 0, r[1] === "j" ? "j" : "i"] as [number, "i" | "j"],
     ),
   };
+}
+
+function parseLoadCombinations(
+  value: string,
+  defaultCase: string,
+): LoadCombination[] {
+  const out: LoadCombination[] = [];
+  for (const row of parseRows(value)) {
+    const combo = row[0]?.trim() || "SERVICE";
+    if (row.length <= 3) {
+      out.push([
+        combo,
+        row[1]?.trim() || defaultCase,
+        Number(row[2]) || 0,
+      ]);
+      continue;
+    }
+    for (let ci = 1; ci < row.length; ci += 2) {
+      const loadCase = row[ci]?.trim();
+      const factor = row[ci + 1]?.trim();
+      if (!loadCase && !factor) continue;
+      out.push([combo, loadCase || defaultCase, Number(factor) || 0]);
+    }
+  }
+  return out;
 }
 
 export function fieldsFromDesign(d: Partial<Fields>): Fields {

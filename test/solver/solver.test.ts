@@ -11,6 +11,7 @@ import { coerceAiDesignResult } from "../../lib/ai-design";
 import {
   DEFAULT_FIELDS,
   fieldsFromDesign,
+  groupLoadCombinationRows,
   parseFields,
   type LoadCombination,
 } from "../../lib/design-fields";
@@ -102,6 +103,35 @@ test("formula-style load combination names define their own case factors", () =>
     [2, 0, -192, 0, "L"],
     [4, 0, -52.5, 0, "EQ"],
   ]);
+});
+
+test("wide load combination rows parse as repeated case factor slots", () => {
+  const parsed = parseFields({
+    ...DEFAULT_FIELDS,
+    loadCombinations:
+      "(1.0D+0.525EQ+0.75L, D, 1, EQ, 0.525, L, 0.75)",
+  });
+
+  assert.deepEqual(parsed.loadCombinations, [
+    ["1.0D+0.525EQ+0.75L", "D", 1],
+    ["1.0D+0.525EQ+0.75L", "EQ", 0.525],
+    ["1.0D+0.525EQ+0.75L", "L", 0.75],
+  ]);
+});
+
+test("legacy load combination rows group into one wide authoring row", () => {
+  assert.deepEqual(
+    groupLoadCombinationRows([
+      ["SERVICE", "D", "1"],
+      ["SERVICE", "L", "1"],
+      ["1.2D+1.6L", "D", "1.2"],
+      ["1.2D+1.6L", "L", "1.6"],
+    ]),
+    [
+      ["SERVICE", "D", "1", "L", "1"],
+      ["1.2D+1.6L", "D", "1.2", "L", "1.6"],
+    ],
+  );
 });
 
 test("load combinations classify service and strength envelopes", () => {

@@ -75,9 +75,9 @@ distributed stiffness: force per transverse deflection per member length
 ```
 
 In the web app, load cases and load combinations are table-driven. `LOAD CASES`
-uses `(case, label)`, `LOAD COMBINATIONS` uses one row per term
-`(combo, case, factor)`, and point/distributed load rows end with a `case`
-column. The `RUN` control prompts for the combination name to analyze.
+uses `(case, label)`, `LOAD COMBINATIONS` uses one row per combo
+`(combo, case, factor, case, factor, ...)`, and point/distributed load rows
+end with a `case` column.
 
 ### Sign convention
 
