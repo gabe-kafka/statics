@@ -119,7 +119,7 @@ export const GALLERY_EXAMPLES: readonly GalleryExample[] = [
       nodes: "(0, 0)\n(44, 0)",
       members: "(0, 1)",
       loadCases: "(D, Dead)\n(L, Live)",
-      loadCombinations: "(SERVICE, D, 1)",
+      loadCombinations: "(SERVICE, 1, 0)",
       pointLoads: "(1, -20, D)",
       distLoads: "(0, -0.75, -0.75, D)",
       fixity: "(0, 1, 0, 0)",

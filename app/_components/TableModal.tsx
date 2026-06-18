@@ -3,9 +3,9 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { InputSpec } from "@/lib/design-fields";
 import {
-  LOAD_COMBINATION_SLOT_COUNT,
   defaultRowForInput,
-  groupLoadCombinationRows,
+  loadCombinationCaseColumns,
+  loadCombinationFactorRows,
   parseRows,
   rowsToTSV,
   serializeRows,
@@ -25,11 +25,23 @@ export function TableModal({
   onChange: (v: string) => void;
   onClose: () => void;
 }) {
-  const cols = spec.columns.length;
+  const parsedRows = parseRows(value);
+  const loadCombinationCases =
+    spec.key === "loadCombinations"
+      ? loadCombinationCaseColumns(loadCaseOptions, parsedRows)
+      : [];
+  const columns =
+    spec.key === "loadCombinations"
+      ? [
+          "combo",
+          ...loadCombinationCases.map((loadCase) => `${loadCase} factor`),
+        ]
+      : [...spec.columns];
+  const cols = columns.length;
   const rows =
     spec.key === "loadCombinations"
-      ? groupLoadCombinationRows(parseRows(value))
-      : parseRows(value);
+      ? loadCombinationFactorRows(parsedRows, loadCombinationCases)
+      : parsedRows;
   const hasLabels = hasRowLabels(spec);
   const displayRows = rows.map((row) =>
     Array.from({ length: cols }, (_, ci) =>
@@ -37,7 +49,10 @@ export function TableModal({
     ),
   );
   const [status, setStatus] = useState<string>("");
-  const [sel, setSel] = useState<{ a: [number, number]; b: [number, number] } | null>(null);
+  const [sel, setSel] = useState<{
+    a: [number, number];
+    b: [number, number];
+  } | null>(null);
   const anchorRef = useRef<[number, number] | null>(null);
   const pendingFocusRef = useRef<[number, number] | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -109,7 +124,10 @@ export function TableModal({
 
   const addRows = (count: number) => {
     const newRows = Array.from({ length: count }, (_, i) =>
-      defaultRowForModal(spec, rows.length + i, loadCaseOptions),
+      normalizeRowLength(
+        defaultRowForModal(spec, rows.length + i, loadCaseOptions),
+        cols,
+      ),
     );
     onChange(serializeRows([...rows, ...newRows]));
   };
@@ -184,7 +202,7 @@ export function TableModal({
     const next = rows.map((r) => r.slice());
     for (let r = 0; r < grid.length; r++) {
       const targetRi = ri + r;
-      if (!next[targetRi]) next[targetRi] = spec.columns.map(() => "");
+      if (!next[targetRi]) next[targetRi] = columns.map(() => "");
       for (let c = 0; c < grid[r].length; c++) {
         const targetCi = ci + c;
         if (targetCi < cols) {
@@ -302,7 +320,7 @@ export function TableModal({
             onCopy={onGridCopy}
             onPaste={onGridPaste}
             style={{
-              gridTemplateColumns: gridTemplateColumns(spec),
+              gridTemplateColumns: gridTemplateColumns(spec, cols),
             }}
           >
             {hasLabels && (
@@ -310,10 +328,14 @@ export function TableModal({
                 NODE
               </div>
             )}
-            {spec.columns.map((c, ci) => (
+            {columns.map((c, ci) => (
               <div
                 key={`${c}-${ci}`}
-                className="bg-bg px-1.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-dim"
+                className={
+                  spec.key === "loadCombinations" && ci > 0
+                    ? "bg-bg px-1.5 py-1 text-center font-mono text-[10px] uppercase tracking-[0.08em] text-text"
+                    : "bg-bg px-1.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-dim"
+                }
               >
                 {c}
               </div>
@@ -326,13 +348,13 @@ export function TableModal({
                     N{ri + 1}
                   </div>
                 )}
-                {spec.columns.map((_, ci) =>
+                {columns.map((_, ci) =>
                   isLoadCaseCell(spec, ci) ? (
                     <select
                       key={ci}
                       data-cell={`${ri}-${ci}`}
                       value={row[ci] ?? ""}
-                      aria-label={`${spec.columns[ci]} row ${ri + 1}`}
+                      aria-label={`${columns[ci]} row ${ri + 1}`}
                       onChange={(e) => setCell(ri, ci, e.target.value)}
                       onKeyDown={(e) => onCellKeyDown(e, ri, ci)}
                       onMouseDown={() => onCellDown(ri, ci)}
@@ -360,7 +382,7 @@ export function TableModal({
                         type="checkbox"
                         data-cell={`${ri}-${ci}`}
                         checked={isTruthyCell(row[ci] ?? "")}
-                        aria-label={`${spec.columns[ci]} row ${ri + 1}`}
+                        aria-label={`${columns[ci]} row ${ri + 1}`}
                         onChange={(e) =>
                           setCell(ri, ci, e.target.checked ? "1" : "0")
                         }
@@ -490,7 +512,6 @@ function isCheckboxCell(spec: InputSpec, ci: number): boolean {
 }
 
 function isLoadCaseCell(spec: InputSpec, ci: number): boolean {
-  if (spec.key === "loadCombinations") return ci > 0 && ci % 2 === 1;
   if (
     spec.key === "pointLoads" ||
     spec.key === "axialLoads" ||
@@ -530,8 +551,8 @@ function defaultRowForModal(
   loadCaseOptions: string[],
 ): string[] {
   const row = defaultRowForInput(spec, rowIndex);
+  if (spec.key === "loadCombinations") return row;
   if (
-    spec.key !== "loadCombinations" &&
     spec.key !== "pointLoads" &&
     spec.key !== "axialLoads" &&
     spec.key !== "pointMoments" &&
@@ -540,11 +561,15 @@ function defaultRowForModal(
     return row;
 
   const cases = caseOptionsForCell(loadCaseOptions, "").filter(Boolean);
-  const caseColumn = spec.key === "loadCombinations" ? 1 : row.length - 1;
+  const caseColumn = row.length - 1;
   if (cases.length === 0 || cases.includes(row[caseColumn])) return row;
   const next = [...row];
   next[caseColumn] = cases[rowIndex % cases.length];
   return next;
+}
+
+function normalizeRowLength(row: string[], cols: number): string[] {
+  return Array.from({ length: cols }, (_, index) => row[index] ?? "");
 }
 
 function focusCell(
@@ -604,19 +629,23 @@ function modalWidth(spec: InputSpec): string {
   return "min(560px, 95vw)";
 }
 
-function tableSizeLabel(spec: InputSpec, rowCount: number, colCount: number): string {
+function tableSizeLabel(
+  spec: InputSpec,
+  rowCount: number,
+  colCount: number,
+): string {
   if (spec.key === "loadCombinations") {
     return `${rowCount} ${rowCount === 1 ? "combo" : "combos"}`;
   }
   return `${rowCount} x ${colCount}`;
 }
 
-function gridTemplateColumns(spec: InputSpec): string {
+function gridTemplateColumns(spec: InputSpec, cols: number): string {
   if (spec.key === "loadCombinations") {
-    return `minmax(260px, 1.4fr) repeat(${LOAD_COMBINATION_SLOT_COUNT}, minmax(54px, 64px) minmax(54px, 64px)) 20px`;
+    return `minmax(260px, 1.6fr) repeat(${Math.max(0, cols - 1)}, minmax(78px, 92px)) 20px`;
   }
   if (hasRowLabels(spec)) {
-    return `minmax(44px, 52px) repeat(${spec.columns.length}, minmax(60px, 1fr)) 20px`;
+    return `minmax(44px, 52px) repeat(${cols}, minmax(60px, 1fr)) 20px`;
   }
-  return `repeat(${spec.columns.length}, minmax(60px, 1fr)) 20px`;
+  return `repeat(${cols}, minmax(60px, 1fr)) 20px`;
 }

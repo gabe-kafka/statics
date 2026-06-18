@@ -55,22 +55,18 @@ const DEFAULT_LOAD_CASE_ROWS = [
   ["L", "Live"],
 ];
 
-export const LOAD_COMBINATION_SLOT_COUNT = 10;
 const LOAD_COMBINATION_COLUMNS = [
   "combo",
-  ...Array.from({ length: LOAD_COMBINATION_SLOT_COUNT }, () => [
-    "case",
-    "factor",
-  ]).flat(),
+  ...DEFAULT_LOAD_CASE_ROWS.map(([id]) => id),
 ];
 
 const DEFAULT_LOAD_COMBINATION_ROWS = [
-  ["SERVICE", "D", "1", "L", "1"],
-  ["1.4D", "D", "1.4"],
-  ["1.2D+1.6L", "D", "1.2", "L", "1.6"],
-  ["1.2D+1.0L", "D", "1.2", "L", "1"],
-  ["0.9D", "D", "0.9"],
-  ["0.9D+1.0L", "D", "0.9", "L", "1"],
+  ["SERVICE", "1", "1"],
+  ["1.4D", "1.4", ""],
+  ["1.2D+1.6L", "1.2", "1.6"],
+  ["1.2D+1.0L", "1.2", "1"],
+  ["0.9D", "0.9", ""],
+  ["0.9D+1.0L", "0.9", "1"],
 ];
 
 export type ParsedDesignFields = {
@@ -170,7 +166,6 @@ export function defaultRowForInput(spec: InputSpec, rowIndex: number): string[] 
     return (
       DEFAULT_LOAD_COMBINATION_ROWS[rowIndex] ?? [
         `COMBO ${rowIndex + 1}`,
-        "D",
         "1",
       ]
     );
@@ -229,13 +224,74 @@ export function groupLoadCombinationRows(rows: string[][]): string[][] {
     }
   }
 
-  return out.map((row) => row.slice(0, LOAD_COMBINATION_COLUMNS.length));
+  return out;
+}
+
+export function loadCombinationCaseColumns(
+  loadCaseOptions: readonly string[],
+  rows: string[][] = [],
+): string[] {
+  const out: string[] = [];
+  const add = (value: string | undefined) => {
+    const id = value?.trim();
+    if (!id) return;
+    if (!out.some((existing) => sameLoadCaseId(existing, id))) out.push(id);
+  };
+
+  loadCaseOptions.forEach(add);
+
+  for (const row of rows) {
+    if (isLoadCombinationMatrixRow(row, out)) continue;
+    for (let ci = 1; ci < row.length; ci += 2) add(row[ci]);
+  }
+
+  if (out.length === 0) DEFAULT_LOAD_CASE_ROWS.forEach(([id]) => add(id));
+  return out;
+}
+
+export function loadCombinationFactorRows(
+  rows: string[][],
+  loadCaseOptions: readonly string[],
+): string[][] {
+  const cases = loadCombinationCaseColumns(loadCaseOptions, rows);
+  const out: { combo: string; factors: Map<string, string> }[] = [];
+  const byCombo = new Map<string, Map<string, string>>();
+
+  for (const row of rows) {
+    const combo = row[0]?.trim() || "SERVICE";
+    let factors = byCombo.get(combo);
+    if (!factors) {
+      factors = new Map();
+      byCombo.set(combo, factors);
+      out.push({ combo, factors });
+    }
+
+    if (isLoadCombinationMatrixRow(row, cases)) {
+      cases.forEach((loadCase, index) => {
+        const factor = row[index + 1]?.trim() ?? "";
+        if (factor) factors.set(normalizeLoadCaseId(loadCase), factor);
+      });
+      continue;
+    }
+
+    for (let ci = 1; ci < row.length; ci += 2) {
+      const loadCase = row[ci]?.trim() ?? "";
+      const factor = row[ci + 1]?.trim() ?? "";
+      if (!loadCase && !factor) continue;
+      factors.set(normalizeLoadCaseId(loadCase || cases[0] || "D"), factor);
+    }
+  }
+
+  return out.map(({ combo, factors }) => [
+    combo,
+    ...cases.map((loadCase) => factors.get(normalizeLoadCaseId(loadCase)) ?? ""),
+  ]);
 }
 
 export function authoringRowCount(key: InputKey, value: string): number {
   const rows = parseRows(value);
   if (key === "loadCombinations") {
-    return groupLoadCombinationRows(rows).length;
+    return loadCombinationFactorRows(rows, []).length;
   }
   return rows.length;
 }
@@ -280,7 +336,11 @@ export function parseFields(fields: Fields): ParsedDesignFields {
       (r) => [Number(r[0]) || 0, Number(r[1]) || 0] as [number, number],
     ),
     loadCases,
-    loadCombinations: parseLoadCombinations(fields.loadCombinations, defaultCase),
+    loadCombinations: parseLoadCombinations(
+      fields.loadCombinations,
+      loadCases,
+      defaultCase,
+    ),
     fixity: parseRows(fields.fixity).map(
       (r) =>
         [
@@ -325,27 +385,52 @@ export function parseFields(fields: Fields): ParsedDesignFields {
 
 function parseLoadCombinations(
   value: string,
+  loadCases: LoadCase[],
   defaultCase: string,
 ): LoadCombination[] {
   const out: LoadCombination[] = [];
-  for (const row of parseRows(value)) {
+  const rows = parseRows(value);
+  const cases = loadCombinationCaseColumns(
+    loadCases.map(([id]) => id),
+    rows,
+  );
+
+  for (const row of loadCombinationFactorRows(rows, cases)) {
     const combo = row[0]?.trim() || "SERVICE";
-    if (row.length <= 3) {
-      out.push([
-        combo,
-        row[1]?.trim() || defaultCase,
-        Number(row[2]) || 0,
-      ]);
-      continue;
-    }
-    for (let ci = 1; ci < row.length; ci += 2) {
-      const loadCase = row[ci]?.trim();
-      const factor = row[ci + 1]?.trim();
-      if (!loadCase && !factor) continue;
-      out.push([combo, loadCase || defaultCase, Number(factor) || 0]);
+    for (let ci = 1; ci < row.length; ci++) {
+      const factor = row[ci]?.trim();
+      if (!factor) continue;
+      out.push([combo, cases[ci - 1] || defaultCase, Number(factor) || 0]);
     }
   }
   return out;
+}
+
+function isLoadCombinationMatrixRow(
+  row: string[],
+  loadCaseOptions: readonly string[],
+): boolean {
+  if (loadCaseOptions.length === 0 || row.length <= 1) return false;
+  const secondCell = row[1]?.trim();
+  if (!secondCell) return true;
+  if (
+    loadCaseOptions.some((loadCase) => sameLoadCaseId(loadCase, secondCell))
+  ) {
+    return false;
+  }
+  return isNumericCell(secondCell);
+}
+
+function sameLoadCaseId(a: string, b: string): boolean {
+  return normalizeLoadCaseId(a) === normalizeLoadCaseId(b);
+}
+
+function normalizeLoadCaseId(id: string): string {
+  return id.trim().toUpperCase();
+}
+
+function isNumericCell(value: string): boolean {
+  return value.trim() !== "" && Number.isFinite(Number(value));
 }
 
 export function fieldsFromDesign(d: Partial<Fields>): Fields {

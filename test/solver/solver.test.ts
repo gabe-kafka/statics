@@ -13,6 +13,7 @@ import {
   authoringRowCount,
   fieldsFromDesign,
   groupLoadCombinationRows,
+  loadCombinationFactorRows,
   parseFields,
   type LoadCombination,
 } from "../../lib/design-fields";
@@ -115,8 +116,26 @@ test("wide load combination rows parse as repeated case factor slots", () => {
 
   assert.deepEqual(parsed.loadCombinations, [
     ["1.0D+0.525EQ+0.75L", "D", 1],
-    ["1.0D+0.525EQ+0.75L", "EQ", 0.525],
     ["1.0D+0.525EQ+0.75L", "L", 0.75],
+    ["1.0D+0.525EQ+0.75L", "EQ", 0.525],
+  ]);
+});
+
+test("load combination matrix rows parse as load-case factor columns", () => {
+  const parsed = parseFields({
+    ...DEFAULT_FIELDS,
+    loadCases: "(D, Dead)\n(L, Live)\n(EQ, Earthquake)",
+    loadCombinations:
+      "(SERVICE, 1, 1, )\n" +
+      "(1.0D+0.525EQ+0.75L, 1, 0.75, 0.525)",
+  });
+
+  assert.deepEqual(parsed.loadCombinations, [
+    ["SERVICE", "D", 1],
+    ["SERVICE", "L", 1],
+    ["1.0D+0.525EQ+0.75L", "D", 1],
+    ["1.0D+0.525EQ+0.75L", "L", 0.75],
+    ["1.0D+0.525EQ+0.75L", "EQ", 0.525],
   ]);
 });
 
@@ -131,6 +150,25 @@ test("legacy load combination rows group into one wide authoring row", () => {
     [
       ["SERVICE", "D", "1", "L", "1"],
       ["1.2D+1.6L", "D", "1.2", "L", "1.6"],
+    ],
+  );
+});
+
+test("legacy load combination rows render as factor columns by load case", () => {
+  assert.deepEqual(
+    loadCombinationFactorRows(
+      [
+        ["SERVICE", "D", "1"],
+        ["SERVICE", "L", "1"],
+        ["1.2D+1.0EQ+1.0L", "D", "1.2"],
+        ["1.2D+1.0EQ+1.0L", "EQ", "1"],
+        ["1.2D+1.0EQ+1.0L", "L", "1"],
+      ],
+      ["D", "L", "EQ"],
+    ),
+    [
+      ["SERVICE", "1", "1", ""],
+      ["1.2D+1.0EQ+1.0L", "1.2", "1", "1"],
     ],
   );
 });

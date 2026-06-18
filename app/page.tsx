@@ -6,7 +6,11 @@ import { AiDesignChat } from "./_components/AiDesignChat";
 import { Diagrams } from "./_components/Diagrams";
 import { ExampleGallery } from "./_components/ExampleGallery";
 import { TableModal } from "./_components/TableModal";
-import { TopBar, type DesignRow } from "./_components/TopBar";
+import {
+  TopBar,
+  type DesignRow,
+  type SaveStatus,
+} from "./_components/TopBar";
 import {
   DEFAULT_FIELDS,
   INPUTS,
@@ -18,6 +22,8 @@ import {
   type InputKey,
 } from "@/lib/design-fields";
 import { GALLERY_EXAMPLES, type GalleryExample } from "@/lib/examples";
+
+const AUTOSAVE_INTERVAL_MS = 10000;
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -31,6 +37,7 @@ export default function Home() {
   const [fields, setFields] = useState<Fields>(DEFAULT_FIELDS);
   const [list, setList] = useState<DesignRow[]>([]);
   const [busy, setBusy] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [openKey, setOpenKey] = useState<InputKey | null>(null);
   const [E, setE] = useState(29000);
   const [I, setI] = useState(100);
@@ -62,6 +69,9 @@ export default function Home() {
   }, [fields.loadCases]);
 
   const fieldsRef = useRef(fields);
+  const draftRef = useRef({ designId, name, fields });
+  const savedSnapshotRef = useRef(designDraftSnapshot(name, fields));
+  const saveInFlightRef = useRef(false);
   const historyRef = useRef<{ past: Fields[]; future: Fields[] }>({
     past: [],
     future: [],
@@ -72,7 +82,102 @@ export default function Home() {
 
   useEffect(() => {
     fieldsRef.current = fields;
-  }, [fields]);
+    draftRef.current = { designId, name, fields };
+  }, [designId, fields, name]);
+
+  useEffect(() => {
+    if (!signedIn) {
+      savedSnapshotRef.current = designDraftSnapshot(name, fields);
+      // Synchronizes UI save status with auth/session state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSaveStatus("idle");
+      return;
+    }
+
+    const latestSnapshot = designDraftSnapshot(name, fields);
+    if (latestSnapshot === savedSnapshotRef.current) {
+      // Synchronizes UI save status with the latest draft snapshot.
+      setSaveStatus((current) =>
+        current === "dirty" || current === "error" ? "saved" : current,
+      );
+      return;
+    }
+
+    // Synchronizes UI save status with local draft edits.
+    setSaveStatus((current) => (current === "saving" ? current : "dirty"));
+  }, [fields, name, signedIn]);
+
+  const refreshList = useCallback(async () => {
+    if (!signedIn) {
+      setList([]);
+      return;
+    }
+    const r = await fetch("/api/designs");
+    if (r.ok) setList(await r.json());
+  }, [signedIn]);
+
+  const saveCurrentDesign = useCallback(
+    async ({ manual = false }: { manual?: boolean } = {}) => {
+      if (!signedIn || saveInFlightRef.current) return false;
+
+      const draft = draftRef.current;
+      const snapshot = designDraftSnapshot(draft.name, draft.fields);
+      if (!manual && snapshot === savedSnapshotRef.current) return true;
+
+      saveInFlightRef.current = true;
+      if (manual) setBusy(true);
+      setSaveStatus("saving");
+      try {
+        const r = await fetch("/api/designs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: draft.designId,
+            name: normalizedDesignName(draft.name),
+            ...draft.fields,
+          }),
+        });
+        const d = (await r.json()) as { id?: string; error?: string };
+        if (!r.ok || !d.id) {
+          throw new Error(d.error ?? "save failed");
+        }
+
+        setDesignId(d.id);
+        draftRef.current = { ...draftRef.current, designId: d.id };
+        savedSnapshotRef.current = snapshot;
+        const latest = draftRef.current;
+        const latestSnapshot = designDraftSnapshot(latest.name, latest.fields);
+        setSaveStatus(latestSnapshot === snapshot ? "saved" : "dirty");
+        void refreshList();
+        return true;
+      } catch {
+        setSaveStatus("error");
+        return false;
+      } finally {
+        saveInFlightRef.current = false;
+        if (manual) setBusy(false);
+      }
+    },
+    [refreshList, signedIn],
+  );
+
+  useEffect(() => {
+    if (!signedIn) return;
+    const timer = window.setInterval(() => {
+      void saveCurrentDesign();
+    }, AUTOSAVE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [saveCurrentDesign, signedIn]);
+
+  useEffect(() => {
+    if (!signedIn) return;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") void saveCurrentDesign();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [saveCurrentDesign, signedIn]);
 
   const flushPending = useCallback(() => {
     if (commitTimerRef.current !== null) {
@@ -126,15 +231,6 @@ export default function Home() {
     suppressHistoryRef.current = true;
     setFields(next);
   }, [flushPending]);
-
-  const refreshList = useCallback(async () => {
-    if (!signedIn) {
-      setList([]);
-      return;
-    }
-    const r = await fetch("/api/designs");
-    if (r.ok) setList(await r.json());
-  }, [signedIn]);
 
   useEffect(() => {
     // Synchronizes saved designs from the authenticated API session.
@@ -227,23 +323,8 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
 
-  async function save() {
-    if (!signedIn || !name.trim() || busy) return;
-    setBusy(true);
-    try {
-      const r = await fetch("/api/designs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: designId, name, ...fields }),
-      });
-      if (r.ok) {
-        const d = (await r.json()) as { id: string };
-        setDesignId(d.id);
-        await refreshList();
-      }
-    } finally {
-      setBusy(false);
-    }
+  function save() {
+    void saveCurrentDesign({ manual: true });
   }
 
   const load = useCallback(async (id: string) => {
@@ -251,9 +332,12 @@ export default function Home() {
     const r = await fetch(`/api/designs/${id}`);
     if (!r.ok) return;
     const d = (await r.json()) as Fields & { id: string; name: string };
+    const nextFields = fieldsFromDesign(d);
     setDesignId(d.id);
     setName(d.name);
-    setFields(fieldsFromDesign(d));
+    setFields(nextFields);
+    savedSnapshotRef.current = designDraftSnapshot(d.name, nextFields);
+    setSaveStatus("saved");
   }, []);
 
   useEffect(() => {
@@ -266,16 +350,20 @@ export default function Home() {
   }, [signedIn, list, load]);
 
   function newDesign() {
+    const nextFields = DEFAULT_FIELDS;
     setDesignId(null);
     setName("");
-    setFields(DEFAULT_FIELDS);
+    setFields(nextFields);
     setActiveExampleId(null);
+    savedSnapshotRef.current = designDraftSnapshot("", nextFields);
+    setSaveStatus("idle");
   }
 
   function copyDesign() {
     setDesignId(null);
     setName(copyName(name));
     setActiveExampleId(null);
+    setSaveStatus(signedIn ? "dirty" : "idle");
   }
 
   function loadExample(example: GalleryExample) {
@@ -285,6 +373,8 @@ export default function Home() {
     setE(example.E);
     setI(example.I);
     setActiveExampleId(example.id);
+    savedSnapshotRef.current = designDraftSnapshot(example.title, example.fields);
+    setSaveStatus("idle");
   }
 
   return (
@@ -293,6 +383,7 @@ export default function Home() {
         name={name}
         onNameChange={setName}
         busy={busy}
+        saveStatus={saveStatus}
         designId={designId}
         signedIn={signedIn}
         authStatus={status}
@@ -392,4 +483,15 @@ export default function Home() {
 function copyName(name: string): string {
   const trimmed = name.trim();
   return trimmed ? `${trimmed} copy` : "untitled copy";
+}
+
+function normalizedDesignName(name: string): string {
+  return name.trim() || "untitled";
+}
+
+function designDraftSnapshot(name: string, fields: Fields): string {
+  return JSON.stringify({
+    name: normalizedDesignName(name),
+    fields,
+  });
 }

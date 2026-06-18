@@ -5,11 +5,13 @@ import Image from "next/image";
 import { signIn, signOut } from "next-auth/react";
 
 export type DesignRow = { id: string; name: string; updatedAt: string };
+export type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 
 export function TopBar({
   name,
   onNameChange,
   busy,
+  saveStatus,
   designId,
   signedIn,
   authStatus,
@@ -29,6 +31,7 @@ export function TopBar({
   name: string;
   onNameChange: (value: string) => void;
   busy: boolean;
+  saveStatus: SaveStatus;
   designId: string | null;
   signedIn: boolean;
   authStatus: string;
@@ -54,6 +57,7 @@ export function TopBar({
     : transientReady
       ? "READY"
       : "NEEDED";
+  const saveStatusText = signedIn ? saveStatusLabel(saveStatus) : "";
 
   return (
     <div className="relative flex h-9 items-stretch border-b border-border text-[10px]">
@@ -76,12 +80,19 @@ export function TopBar({
         <button
           type="button"
           onClick={onSave}
-          disabled={!signedIn || !name.trim() || busy}
-          title={!signedIn ? "sign in to save" : undefined}
+          disabled={!signedIn || busy}
+          title={!signedIn ? "sign in to save" : "save now"}
           className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent disabled:opacity-40"
         >
           {busy ? "..." : designId ? "SAVE" : "SAVE NEW"}
         </button>
+        {saveStatusText && (
+          <span
+            className={`font-mono text-[9px] uppercase tracking-[0.08em] ${saveStatusClass(saveStatus)}`}
+          >
+            {saveStatusText}
+          </span>
+        )}
         <button
           type="button"
           onClick={onCopy}
@@ -234,4 +245,19 @@ export function TopBar({
       </div>
     </div>
   );
+}
+
+function saveStatusLabel(status: SaveStatus): string {
+  if (status === "dirty") return "UNSAVED";
+  if (status === "saving") return "SAVING";
+  if (status === "saved") return "SAVED";
+  if (status === "error") return "SAVE FAILED";
+  return "";
+}
+
+function saveStatusClass(status: SaveStatus): string {
+  if (status === "saved") return "text-green";
+  if (status === "error") return "text-red";
+  if (status === "saving") return "text-accent";
+  return "text-dim";
 }

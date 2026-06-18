@@ -149,7 +149,7 @@ function buildUserInput(
         members: "(i, j) zero-based node indexes",
         loadCases: "(case, label)",
         loadCombinations:
-          "(combo, case, factor, case, factor, ...) with up to 10 case/factor pairs per combo row",
+          "(combo, D factor, L factor, EQ factor, ...) one factor column per load case in loadCases order",
         pointLoads: "(node, Fy, case) transverse/vertical point loads only",
         axialLoads: "(node, Fx, case) axial/horizontal point loads only",
         pointMoments: "(node, M, case) point moments only",
