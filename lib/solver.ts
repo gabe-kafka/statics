@@ -263,7 +263,7 @@ export function solve(inp: SolveInput): Solution {
 
   for (let iteration = 0; iteration < 8; iteration++) {
     if (!result.ok) return result;
-    const next = springs.map((spring, index) => {
+    const next = springs.map((spring) => {
       const [member, k, compressionOnly] = spring;
       if (!(k > 0) || !compressionOnly) return true;
       const memberResult = result.members[member];

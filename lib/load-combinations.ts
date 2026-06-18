@@ -8,8 +8,14 @@ import type {
 export const ALL_LOADS_COMBINATION = "ALL";
 
 export type CombinedLoads = {
-  pointLoads: [number, number, number, number][];
-  distLoads: [number, number, number][];
+  pointLoads: [
+    node: number,
+    Fx: number,
+    Fy: number,
+    M: number,
+    loadCase?: string,
+  ][];
+  distLoads: [member: number, wi: number, wj: number, loadCase?: string][];
 };
 
 export type LoadCombinationKind = "service" | "strength";
@@ -164,19 +170,27 @@ function combineLoadsWithFactors({
   return {
     pointLoads: pointLoads
       .map(([node, fx, fy, moment, loadCase]) => {
-        const factor = factorForCase(factors, loadCase || defaultCase);
-        return [node, fx * factor, fy * factor, moment * factor] as [
+        const sourceCase = loadCase || defaultCase;
+        const factor = factorForCase(factors, sourceCase);
+        return [node, fx * factor, fy * factor, moment * factor, sourceCase] as [
           number,
           number,
           number,
           number,
+          string,
         ];
       })
       .filter(([, fx, fy, moment]) => fx !== 0 || fy !== 0 || moment !== 0),
     distLoads: distLoads
       .map(([member, wi, wj, loadCase]) => {
-        const factor = factorForCase(factors, loadCase || defaultCase);
-        return [member, wi * factor, wj * factor] as [number, number, number];
+        const sourceCase = loadCase || defaultCase;
+        const factor = factorForCase(factors, sourceCase);
+        return [member, wi * factor, wj * factor, sourceCase] as [
+          number,
+          number,
+          number,
+          string,
+        ];
       })
       .filter(([, wi, wj]) => wi !== 0 || wj !== 0),
   };

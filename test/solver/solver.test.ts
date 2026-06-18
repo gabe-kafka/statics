@@ -46,12 +46,12 @@ test("load combinations scale load rows by case", () => {
   });
 
   assert.deepEqual(combined.pointLoads, [
-    [1, 0, -12, 6],
-    [2, 4.800000000000001, -6.4, 0],
+    [1, 0, -12, 6, "D"],
+    [2, 4.800000000000001, -6.4, 0, "L"],
   ]);
   assert.deepEqual(combined.distLoads, [
-    [0, -2.4, -2.4],
-    [1, -1.6, -4.800000000000001],
+    [0, -2.4, -2.4, "D"],
+    [1, -1.6, -4.800000000000001, "L"],
   ]);
 });
 
@@ -72,8 +72,8 @@ test("load cases isolate matching load rows without combination factors", () => 
     ],
   });
 
-  assert.deepEqual(combined.pointLoads, [[2, 3, -4, 0]]);
-  assert.deepEqual(combined.distLoads, [[1, -1, -3]]);
+  assert.deepEqual(combined.pointLoads, [[2, 3, -4, 0, "L"]]);
+  assert.deepEqual(combined.distLoads, [[1, -1, -3, "L"]]);
 });
 
 test("load combinations classify service and strength envelopes", () => {

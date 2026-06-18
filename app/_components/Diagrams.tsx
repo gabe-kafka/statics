@@ -606,9 +606,10 @@ export function Diagrams({
     );
   });
 
-  displayLoads.pointLoads.forEach(([n, fx, fy, moment = 0], k) => {
+  displayLoads.pointLoads.forEach(([n, fx, fy, moment = 0, loadCase], k) => {
     if (!nodes[n]) return;
     if (fx === 0 && fy === 0 && moment === 0) return;
+    const loadCasePrefix = formatLoadCasePrefix(loadCase);
     const cx = frame.X(nodes[n][0]);
     const cy = frame.Y(nodes[n][1]);
     if (fy !== 0) {
@@ -632,7 +633,7 @@ export function Diagrams({
           key={`pl-${k}-yt`}
           x={cx + 6}
           y={tailY + 10}
-          text={`P=${fmt(Math.abs(fy))} k`}
+          text={`${loadCasePrefix}P=${fmt(Math.abs(fy))} k`}
           anchor="start"
         />,
       );
@@ -658,7 +659,7 @@ export function Diagrams({
           key={`pl-${k}-xt`}
           x={tailX}
           y={cy - 8}
-          text={`H=${fmt(Math.abs(fx))} k`}
+          text={`${loadCasePrefix}H=${fmt(Math.abs(fx))} k`}
           anchor={right ? "end" : "start"}
         />,
       );
@@ -679,7 +680,7 @@ export function Diagrams({
           key={`pl-${k}-mt`}
           x={cx + 22}
           y={cy - 20}
-          text={`M=${fmt(Math.abs(moment))} k-ft`}
+          text={`${loadCasePrefix}M=${fmt(Math.abs(moment))} k-ft`}
           anchor="start"
         />,
       );
@@ -2328,6 +2329,11 @@ function GraphValueLabel({
       </text>
     </g>
   );
+}
+
+function formatLoadCasePrefix(loadCase: string | undefined): string {
+  const trimmed = loadCase?.trim();
+  return trimmed ? `${trimmed}: ` : "";
 }
 
 function LoadLabel({
