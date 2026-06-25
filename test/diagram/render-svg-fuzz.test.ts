@@ -42,6 +42,12 @@ test("FBD SVG renders signed Rx and Ry reactions without clipping", () => {
   assert.match(result.svg.fbd, /Rx -?\d/);
   assert.match(result.svg.fbd, /Ry -?\d/);
   assert.ok(svgHeight(result.svg.fbd) > 220);
+  assert.ok(
+    reactionArrowShafts(result.svg.fbd).some(
+      (shaft) => shaft.axis === "x" && shaft.length >= 10,
+    ),
+    "expected at least one non-collapsed horizontal reaction arrow shaft",
+  );
   assertSvgCoordinatesInsideViewBox(result.svg.fbd, "roof frame FBD");
 });
 
@@ -175,6 +181,32 @@ function svgHeight(svg: string): number {
   const viewBox = svg.match(/viewBox="0 0 [\d.]+ ([\d.]+)"/);
   assert.ok(viewBox, "missing viewBox");
   return Number(viewBox[1]);
+}
+
+function reactionArrowShafts(
+  svg: string,
+): { axis: "x" | "y"; length: number }[] {
+  const out: { axis: "x" | "y"; length: number }[] = [];
+  const number = "-?\\d+(?:\\.\\d+)?(?:e[-+]?\\d+)?";
+  const reactionGroup = new RegExp(
+    `<g stroke="#16a34a"[^>]*><line x1="(${number})" y1="(${number})" x2="(${number})" y2="(${number})"`,
+    "gi",
+  );
+
+  for (const match of svg.matchAll(reactionGroup)) {
+    const x1 = Number(match[1]);
+    const y1 = Number(match[2]);
+    const x2 = Number(match[3]);
+    const y2 = Number(match[4]);
+    const dx = Math.abs(x2 - x1);
+    const dy = Math.abs(y2 - y1);
+    out.push({
+      axis: dx >= dy ? "x" : "y",
+      length: Math.hypot(dx, dy),
+    });
+  }
+
+  return out;
 }
 
 function mulberry32(seed: number): () => number {

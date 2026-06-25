@@ -96,6 +96,10 @@ type ApiState =
 const SAMPLES_PER_MEMBER = 41;
 const LOAD_ARROW_MAX = 56;
 const LOAD_ARROW_MIN = 8;
+const REACTION_ARROW_MAX = 42;
+const REACTION_ARROW_MIN = 18;
+const RX_REACTION_Y_OFFSET = 32;
+const RY_REACTION_Y_OFFSET = 58;
 const CONCRETE_BEAM_URL =
   process.env.NEXT_PUBLIC_CONCRETE_BEAM_URL ??
   "https://concrete-beam.vercel.app";
@@ -883,18 +887,22 @@ export function Diagrams({
   });
 
   const reactionEls: React.ReactElement[] = [];
-  const Rmax = Math.max(
+  const rxMax = Math.max(
     1,
-    ...pointReactions.map((r) => Math.max(Math.abs(r.Rx), Math.abs(r.Ry))),
+    ...pointReactions.map((r) => Math.abs(r.Rx)),
+  );
+  const ryMax = Math.max(
+    1,
+    ...pointReactions.map((r) => Math.abs(r.Ry)),
   );
   pointReactions.forEach((r, k) => {
     if (!nodes[r.node]) return;
     const cx = frame.X(nodes[r.node][0]);
     const nodeY = frame.Y(nodes[r.node][1]);
-    const rxY = nodeY + 24;
-    const ryY = nodeY + 34;
-    const Lx = (Math.abs(r.Rx) / Rmax) * 36 + 4;
-    const Ly = (Math.abs(r.Ry) / Rmax) * 36 + 4;
+    const rxY = nodeY + RX_REACTION_Y_OFFSET;
+    const ryY = nodeY + RY_REACTION_Y_OFFSET;
+    const Lx = scaledReactionArrowLength(r.Rx, rxMax);
+    const Ly = scaledReactionArrowLength(r.Ry, ryMax);
     if (Math.abs(r.Rx) > 1e-3) {
       const tipX = r.Rx > 0 ? cx + 3 : cx - 3;
       const tailX = r.Rx > 0 ? tipX - Lx : tipX + Lx;
@@ -913,7 +921,7 @@ export function Diagrams({
         <text
           key={`rx-t-${k}`}
           x={(tailX + tipX) / 2}
-          y={rxY - 8}
+          y={rxY + 15}
           fill={PALETTE.reaction}
           fontSize={10}
           textAnchor="middle"
@@ -2266,8 +2274,8 @@ function fbdDiagramInsets({
     bottomExtra = Math.max(bottomExtra, LOAD_ARROW_MAX + 72);
   }
   if (reactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3)) {
-    bottomExtra = Math.max(bottomExtra, 48);
-    sideExtra = Math.max(sideExtra, LOAD_ARROW_MAX + 18);
+    bottomExtra = Math.max(bottomExtra, RX_REACTION_Y_OFFSET + 30);
+    sideExtra = Math.max(sideExtra, REACTION_ARROW_MAX + 38);
   }
   if (pointSprings.some(([, kx]) => kx !== 0)) {
     sideExtra = Math.max(sideExtra, 54);
@@ -2591,6 +2599,13 @@ function scaledLoadArrowLength(value: number, max: number): number {
   if (magnitude < 1e-9) return 0;
   const ratio = Math.min(1, magnitude / Math.max(max, 1e-9));
   return Math.max(LOAD_ARROW_MIN, ratio * LOAD_ARROW_MAX);
+}
+
+function scaledReactionArrowLength(value: number, max: number): number {
+  const magnitude = Math.abs(value);
+  if (magnitude < 1e-9) return 0;
+  const ratio = Math.min(1, magnitude / Math.max(max, 1e-9));
+  return REACTION_ARROW_MIN + ratio * (REACTION_ARROW_MAX - REACTION_ARROW_MIN);
 }
 
 function Arrow({

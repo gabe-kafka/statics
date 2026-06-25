@@ -62,6 +62,10 @@ const W = 880;
 const PAD = 48;
 const LOAD_ARROW_MAX = 56;
 const LOAD_ARROW_MIN = 8;
+const REACTION_ARROW_MAX = 42;
+const REACTION_ARROW_MIN = 18;
+const RX_REACTION_Y_OFFSET = 32;
+const RY_REACTION_Y_OFFSET = 58;
 const NODE_MARKER_RADIUS = 2.6;
 const HINGE_MARKER_RADIUS = NODE_MARKER_RADIUS * 2;
 const HINGE_MARKER_FILL = "#ffffff";
@@ -250,8 +254,8 @@ function fbdDiagramInsets(
     bottomExtra = Math.max(bottomExtra, LOAD_ARROW_MAX + 72);
   }
   if (res.reactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3)) {
-    bottomExtra = Math.max(bottomExtra, 48);
-    sideExtra = Math.max(sideExtra, LOAD_ARROW_MAX + 18);
+    bottomExtra = Math.max(bottomExtra, RX_REACTION_Y_OFFSET + 30);
+    sideExtra = Math.max(sideExtra, REACTION_ARROW_MAX + 38);
   }
   if ((req.pointSprings ?? []).some((spring) => spring.Kx !== 0)) {
     sideExtra = Math.max(sideExtra, 54);
@@ -325,6 +329,13 @@ function scaledLoadArrowLength(value: number, max: number): number {
   if (magnitude < 1e-9) return 0;
   const ratio = Math.min(1, magnitude / Math.max(max, 1e-9));
   return Math.max(LOAD_ARROW_MIN, ratio * LOAD_ARROW_MAX);
+}
+
+function scaledReactionArrowLength(value: number, max: number): number {
+  const magnitude = Math.abs(value);
+  if (magnitude < 1e-9) return 0;
+  const ratio = Math.min(1, magnitude / Math.max(max, 1e-9));
+  return REACTION_ARROW_MIN + ratio * (REACTION_ARROW_MAX - REACTION_ARROW_MIN);
 }
 
 function arrow(
@@ -783,24 +794,28 @@ function renderFbd(
   }
 
   // reactions
-  const Rmax = Math.max(
+  const rxMax = Math.max(
     1,
-    ...res.reactions.map((r) => Math.max(Math.abs(r.Rx), Math.abs(r.Ry))),
+    ...res.reactions.map((r) => Math.abs(r.Rx)),
+  );
+  const ryMax = Math.max(
+    1,
+    ...res.reactions.map((r) => Math.abs(r.Ry)),
   );
   for (const r of res.reactions) {
     if (!req.nodes[r.node]) continue;
     const cx = frame.X(req.nodes[r.node][0]);
     const nodeY = frame.Y(req.nodes[r.node][1]);
-    const rxY = nodeY + 24;
-    const ryY = nodeY + 34;
-    const Lx = (Math.abs(r.Rx) / Rmax) * 36 + 4;
-    const Ly = (Math.abs(r.Ry) / Rmax) * 36 + 4;
+    const rxY = nodeY + RX_REACTION_Y_OFFSET;
+    const ryY = nodeY + RY_REACTION_Y_OFFSET;
+    const Lx = scaledReactionArrowLength(r.Rx, rxMax);
+    const Ly = scaledReactionArrowLength(r.Ry, ryMax);
     if (Math.abs(r.Rx) > 1e-3) {
       const tipX = r.Rx > 0 ? cx + 3 : cx - 3;
       const tailX = r.Rx > 0 ? tipX - Lx : tipX + Lx;
       out.push(arrow(tailX, rxY, tipX, rxY, palette.reaction, 6));
       out.push(
-        `<text x="${(tailX + tipX) / 2}" y="${rxY - 8}" fill="${palette.reaction}" font-size="10" text-anchor="middle">${escapeText(`Rx ${fmt(r.Rx)}`)}</text>`,
+        `<text x="${(tailX + tipX) / 2}" y="${rxY + 15}" fill="${palette.reaction}" font-size="10" text-anchor="middle">${escapeText(`Rx ${fmt(r.Rx)}`)}</text>`,
       );
     }
     if (Math.abs(r.Ry) > 1e-3) {
