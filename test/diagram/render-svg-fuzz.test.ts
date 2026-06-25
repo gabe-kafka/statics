@@ -51,7 +51,7 @@ test("FBD SVG renders signed Rx and Ry reactions without clipping", () => {
   assertSvgCoordinatesInsideViewBox(result.svg.fbd, "roof frame FBD");
 });
 
-test("FBD SVG renders member-side Rx when shared support net reaction cancels", () => {
+test("FBD SVG renders net support Rx only for repeated sawtooth bays", () => {
   const request: SolveRequest = {
     nodes: [
       [0, 0],
@@ -98,10 +98,9 @@ test("FBD SVG renders member-side Rx when shared support net reaction cancels", 
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.ok(result.svg?.fbd);
-  assert.match(result.svg.fbd, /RxL -?\d/);
-  assert.match(result.svg.fbd, /RxR -?\d/);
-  assert.equal((result.svg.fbd.match(/data-rx-side=/g) ?? []).length, 4);
-  assertSvgCoordinatesInsideViewBox(result.svg.fbd, "member-side Rx FBD");
+  assert.doesNotMatch(result.svg.fbd, /Rx[LR]/);
+  assert.equal((result.svg.fbd.match(/>Rx\s+-?\d/g) ?? []).length, 2);
+  assertSvgCoordinatesInsideViewBox(result.svg.fbd, "net Rx sawtooth FBD");
 });
 
 test("FBD SVG fuzz keeps generated drawing coordinates inside the viewBox", () => {
