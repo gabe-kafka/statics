@@ -424,9 +424,9 @@ export default function Home() {
         }}
       />
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 items-start justify-center overflow-auto p-4">
-          <div className="w-full max-w-[920px]">
+      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+        <div className="flex min-w-0 flex-1 items-start justify-center overflow-auto p-2 sm:p-4">
+          <div className="w-full min-w-0 max-w-[920px]">
             <Diagrams
               nodes={nodes}
               members={members}
@@ -449,7 +449,7 @@ export default function Home() {
           </div>
         </div>
 
-        <aside className="flex w-44 flex-col overflow-y-auto border-l border-border">
+        <aside className="grid max-h-52 w-full grid-cols-2 overflow-y-auto border-t border-border sm:grid-cols-3 lg:flex lg:max-h-none lg:w-44 lg:flex-col lg:border-l lg:border-t-0">
           {INPUTS.map((spec) => {
             const count = authoringRowCount(spec.key, fields[spec.key]);
             return (
@@ -457,12 +457,14 @@ export default function Home() {
                 key={spec.key}
                 type="button"
                 onClick={() => setOpenKey(spec.key)}
-                className="flex items-center justify-between border-b border-border px-2 py-1.5 text-left hover:bg-surface"
+                className="flex min-w-0 items-center justify-between gap-2 border-b border-border px-2 py-1.5 text-left hover:bg-surface"
               >
-                <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted">
+                <span className="min-w-0 truncate text-[10px] font-medium uppercase tracking-[0.08em] text-muted">
                   {spec.label}
                 </span>
-                <span className="font-mono text-[10px] text-dim">{count}</span>
+                <span className="shrink-0 font-mono text-[10px] text-dim">
+                  {count}
+                </span>
               </button>
             );
           })}

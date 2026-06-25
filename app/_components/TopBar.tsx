@@ -60,35 +60,44 @@ export function TopBar({
   const saveStatusText = signedIn ? saveStatusLabel(saveStatus) : "";
 
   return (
-    <div className="relative flex h-9 items-stretch border-b border-border text-[10px]">
-      <div className="flex items-center gap-2 border-r border-border px-3">
-        <Image src="/logo.png" alt="GK" width={90} height={24} priority />
+    <div className="relative flex min-h-9 flex-wrap items-stretch border-b border-border text-[10px]">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-r border-border px-3">
+        <Image
+          src="/logo.png"
+          alt="GK"
+          width={90}
+          height={24}
+          priority
+          className="h-auto w-20 sm:w-[90px]"
+        />
         <span className="font-medium uppercase tracking-[0.12em] text-muted">
           STATICS
         </span>
       </div>
 
-      <div className="flex flex-1 items-center gap-2 px-3">
-        <span className="uppercase tracking-[0.08em] text-muted">DESIGN</span>
+      <div className="flex min-h-9 min-w-0 flex-1 flex-wrap items-center gap-2 px-3 py-1">
+        <span className="shrink-0 uppercase tracking-[0.08em] text-muted">
+          DESIGN
+        </span>
         <input
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="untitled"
           spellCheck={false}
-          className="h-6 w-48 border border-border bg-surface px-2 font-mono text-[10px] text-text placeholder:text-dim focus:border-accent focus:outline-none"
+          className="h-6 min-w-0 flex-1 basis-36 border border-border bg-surface px-2 font-mono text-[10px] text-text placeholder:text-dim focus:border-accent focus:outline-none sm:flex-none sm:basis-auto sm:w-48"
         />
         <button
           type="button"
           onClick={onSave}
           disabled={!signedIn || busy}
           title={!signedIn ? "sign in to save" : "save now"}
-          className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent disabled:opacity-40"
+          className="h-6 shrink-0 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent disabled:opacity-40"
         >
           {busy ? "..." : designId ? "SAVE" : "SAVE NEW"}
         </button>
         {saveStatusText && (
           <span
-            className={`font-mono text-[9px] uppercase tracking-[0.08em] ${saveStatusClass(saveStatus)}`}
+            className={`shrink-0 font-mono text-[9px] uppercase tracking-[0.08em] ${saveStatusClass(saveStatus)}`}
           >
             {saveStatusText}
           </span>
@@ -98,7 +107,7 @@ export function TopBar({
           onClick={onCopy}
           disabled={busy}
           title="copy current design as an unsaved duplicate"
-          className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent disabled:opacity-40"
+          className="h-6 shrink-0 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent disabled:opacity-40"
         >
           COPY
         </button>
@@ -106,7 +115,7 @@ export function TopBar({
           <button
             type="button"
             onClick={onNew}
-            className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent"
+            className="h-6 shrink-0 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent"
           >
             NEW
           </button>
@@ -119,7 +128,7 @@ export function TopBar({
               e.target.selectedIndex = 0;
               onLoad(v);
             }}
-            className="h-6 border border-border bg-surface px-1 font-mono text-[10px] text-text focus:border-accent focus:outline-none"
+            className="h-6 min-w-0 max-w-full border border-border bg-surface px-1 font-mono text-[10px] text-text focus:border-accent focus:outline-none"
           >
             <option value="">LOAD...</option>
             {designs.map((d) => (
@@ -133,12 +142,12 @@ export function TopBar({
 
       <a
         href="/docs"
-        className="flex items-center border-l border-border px-3 font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:text-text"
+        className="flex h-9 shrink-0 items-center border-l border-border px-3 font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:text-text"
       >
         API
       </a>
 
-      <div className="flex items-center gap-2 border-l border-border px-3">
+      <div className="flex min-h-9 min-w-0 max-w-full flex-wrap items-center gap-2 border-l border-border px-3 py-1">
         {authStatus === "loading" ? (
           <span className="uppercase text-dim">...</span>
         ) : signedIn ? (
@@ -221,14 +230,14 @@ export function TopBar({
                 </div>
               )}
             </div>
-            <span className="text-muted">{email}</span>
+            <span className="min-w-0 max-w-52 truncate text-muted">{email}</span>
             <button
               type="button"
               onClick={() => {
                 onAiApiKeyChange("");
                 signOut();
               }}
-              className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent"
+              className="h-6 shrink-0 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent"
             >
               SIGN OUT
             </button>
@@ -237,7 +246,7 @@ export function TopBar({
           <button
             type="button"
             onClick={() => signIn("google")}
-            className="h-6 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent"
+            className="h-6 shrink-0 border border-border bg-surface px-2 font-mono text-[10px] uppercase tracking-[0.08em] hover:border-accent"
           >
             SIGN IN
           </button>
