@@ -27,6 +27,10 @@ import {
   resolveLoadCaseId,
   type CombinedLoads,
 } from "@/lib/load-combinations";
+import {
+  loadResultantAudit,
+  type LoadResultantAudit,
+} from "@/lib/load-resultants";
 import type {
   MemberOut,
   PeakOut,
@@ -489,6 +493,14 @@ export function Diagrams({
         Math.abs(reaction.Rx) + Math.abs(reaction.Ry) + Math.abs(reaction.M) >
           1e-6,
     );
+  const loadAudit = useMemo(
+    () => loadResultantAudit({ nodes, members, loads: displayLoads }),
+    [nodes, members, displayLoads],
+  );
+  const reactionAudit = {
+    rx: pointReactions.reduce((sum, reaction) => sum + reaction.Rx, 0),
+    ry: pointReactions.reduce((sum, reaction) => sum + reaction.Ry, 0),
+  };
 
   const loadVisualMax = Math.max(
     1e-6,
@@ -1336,6 +1348,14 @@ export function Diagrams({
           {nodeLabelEls}
           {hingeEls}
           {fbdLoadLabels}
+          {hasLoadAudit(loadAudit) && (
+            <LoadResultantReadout
+              x={PAD}
+              y={15}
+              loadAudit={loadAudit}
+              reactionAudit={state.kind === "ok" ? reactionAudit : null}
+            />
+          )}
           <SectionLabel
             x={W - PAD}
             y={16}
@@ -2509,6 +2529,66 @@ function LoadModeButton({
     >
       {label}
     </button>
+  );
+}
+
+function LoadResultantReadout({
+  x,
+  y,
+  loadAudit,
+  reactionAudit,
+}: {
+  x: number;
+  y: number;
+  loadAudit: LoadResultantAudit;
+  reactionAudit: { rx: number; ry: number } | null;
+}) {
+  const rows = [
+    `GLOBAL LOAD   Fx ${fmt(loadAudit.globalFx)} k   Fy ${fmt(loadAudit.globalFy)} k`,
+    ...(reactionAudit
+      ? [
+          `SUPPORT SUM   Rx ${fmt(reactionAudit.rx)} k   Ry ${fmt(reactionAudit.ry)} k`,
+        ]
+      : []),
+    `DIST LOCAL-X  signed ${fmt(loadAudit.distributedLocalX)} k   abs ${fmt(loadAudit.distributedLocalXAbs)} k`,
+  ];
+  const width = Math.max(...rows.map((row) => row.length)) * 5.9 + 16;
+  const height = rows.length * 13 + 9;
+
+  return (
+    <g pointerEvents="none">
+      <rect
+        x={x - 8}
+        y={y - 12}
+        width={width}
+        height={height}
+        fill="var(--bg)"
+        fillOpacity={0.9}
+        stroke="var(--border)"
+        strokeWidth={0.8}
+      />
+      {rows.map((row, index) => (
+        <text
+          key={row}
+          x={x}
+          y={y + index * 13}
+          fontSize={9.5}
+          fill={index === rows.length - 1 ? PALETTE.load : PALETTE.fg}
+          fontFamily="var(--font-mono)"
+        >
+          {row}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function hasLoadAudit(loadAudit: LoadResultantAudit): boolean {
+  return (
+    Math.abs(loadAudit.globalFx) +
+      Math.abs(loadAudit.globalFy) +
+      Math.abs(loadAudit.distributedLocalXAbs) >
+    1e-9
   );
 }
 

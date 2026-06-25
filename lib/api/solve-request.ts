@@ -74,15 +74,6 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
     };
   }
 
-  const uniformSpringLinearKByMember = new Map<number, number>();
-  const uniformSpringCompressionKByMember = new Map<number, number>();
-  for (const spring of normalizedBody.uniformSprings ?? []) {
-    const map = spring.compressionOnly
-      ? uniformSpringCompressionKByMember
-      : uniformSpringLinearKByMember;
-    map.set(spring.member, (map.get(spring.member) ?? 0) + spring.k);
-  }
-
   const memberOut: MemberOut[] = raw.members.map((mr, idx) => {
     const [i, j] = [normalizedBody.members[idx].i, normalizedBody.members[idx].j];
     const xi = normalizedBody.nodes[i][0];
@@ -90,20 +81,16 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
     const xj = normalizedBody.nodes[j][0];
     const yj = normalizedBody.nodes[j][1];
     const samples: SampleOut[] = [];
-    const linearSpringK = uniformSpringLinearKByMember.get(idx) ?? 0;
-    const compressionSpringK = uniformSpringCompressionKByMember.get(idx) ?? 0;
     for (let k = 0; k <= samplesPerMember; k++) {
       const s = (k / samplesPerMember) * mr.L;
       const x = xi + ((xj - xi) * k) / samplesPerMember;
       const y = yi + ((yj - yi) * k) / samplesPerMember;
       const delta = mr.delta(s);
-      const springReaction =
-        -linearSpringK * delta + Math.max(0, -compressionSpringK * delta);
       samples.push({
         s,
         x,
         y,
-        R: springReaction,
+        R: mr.R(s),
         V: mr.V(s),
         M: mr.M(s),
         theta: mr.theta(s),

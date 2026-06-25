@@ -42,6 +42,7 @@ export type MemberResult = {
   Mj: number;
   wi: number;
   wj: number;
+  R: (s: number) => number;
   V: (s: number) => number;
   M: (s: number) => number;
   /** Rotation θ(s) along the member, radians (sagging-positive convention). */
@@ -632,7 +633,7 @@ function solveLinear(inp: SolveInput): Solution {
       qi + ((qj - qi) * s) / L;
     const qFoundation = (s: number): number => {
       if (springK === 0) return 0;
-      const d = delta(s);
+      const d = hermiteV(s);
       return -m.springLinearK * d + Math.max(0, -m.springCompressionK * d);
     };
     const qTotal = (s: number): number => qDistributed(s) + qFoundation(s);
@@ -666,6 +667,7 @@ function solveLinear(inp: SolveInput): Solution {
       Mj: Mj_end,
       wi: qi,
       wj: qj,
+      R: qFoundation,
       V,
       M,
       theta,

@@ -6,7 +6,9 @@ import {
   classifyCombination,
   combineLoads,
   combineLoadsForCase,
+  type CombinedLoads,
 } from "../../lib/load-combinations";
+import { loadResultantAudit } from "../../lib/load-resultants";
 import { coerceAiDesignResult } from "../../lib/ai-design";
 import {
   DEFAULT_FIELDS,
@@ -258,6 +260,52 @@ test("API projected distributed loads use horizontal projection length", () => {
   );
 });
 
+test("projected sawtooth load audit separates global and member-local X", () => {
+  const nodes: [number, number][] = [
+    [0, 0],
+    [11, 6.5],
+    [32, 0],
+    [43, 6.5],
+    [64, 0],
+    [75, 6.5],
+    [96, 0],
+  ];
+  const members: [number, number][] = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 4],
+    [4, 5],
+    [5, 6],
+  ];
+  const loads: CombinedLoads = {
+    pointLoads: [],
+    distLoads: members.map((_, member) => [
+      member,
+      -0.33,
+      -0.33,
+      "S",
+      true,
+    ]),
+  };
+
+  const audit = loadResultantAudit({ nodes, members, loads });
+
+  assert.equal(audit.globalFx, 0);
+  assert.ok(
+    Math.abs(audit.globalFy + 31.68) < 1e-9,
+    `expected -31.68 k global Fy, got ${audit.globalFy}`,
+  );
+  assert.ok(
+    Math.abs(audit.distributedLocalX - 0.6072024975396888) < 1e-9,
+    `expected 0.607 k signed local X, got ${audit.distributedLocalX}`,
+  );
+  assert.ok(
+    Math.abs(audit.distributedLocalXAbs - 11.68732691565793) < 1e-9,
+    `expected 11.687 k absolute local X, got ${audit.distributedLocalXAbs}`,
+  );
+});
+
 test("uniform spring authoring supports compression-only checkbox", () => {
   const parsed = parseFields({
     ...DEFAULT_FIELDS,
@@ -323,6 +371,35 @@ test("uniform spring reaction contributes to API shear recovery", () => {
   const maxReaction = Math.max(...samples.map((sample) => sample.R));
   assert.ok(maxReaction > 0);
   assert.ok(samples[6].V > samples[0].V);
+});
+
+test("uniform spring reaction resultant balances applied transverse load", () => {
+  const result = solveRequest({
+    nodes: [
+      [0, 0],
+      [44, 0],
+    ],
+    members: [{ i: 0, j: 1, E: 29000, I: 100, A: 10 }],
+    supports: [{ node: 0, Rx: true, Ry: false, Rm: false }],
+    pointLoads: [{ node: 1, Fx: 0, Fy: -20 }],
+    distLoads: [{ member: 0, wi: -0.75, wj: -0.75 }],
+    uniformSprings: [{ member: 0, k: 5 }],
+    samplesPerMember: 400,
+    include: ["data"],
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const samples = result.members[0].samples;
+  const springResultant = samples.slice(0, -1).reduce((sum, sample, index) => {
+    const next = samples[index + 1];
+    return sum + ((sample.R + next.R) / 2) * (next.s - sample.s);
+  }, 0);
+
+  assert.ok(
+    Math.abs(springResultant - 53) < 1e-3,
+    `expected 53 k spring resultant, got ${springResultant}`,
+  );
 });
 
 test("authoring load tables combine vertical, axial, and moment point loads", () => {
