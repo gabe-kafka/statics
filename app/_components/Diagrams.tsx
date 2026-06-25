@@ -56,6 +56,11 @@ const PALETTE = {
   theta: "#4aa3ff",
   delta: "#ff7aa2",
 };
+
+const NODE_MARKER_RADIUS = 2.6;
+const HINGE_MARKER_RADIUS = NODE_MARKER_RADIUS * 2;
+const HINGE_MARKER_FILL = "#ffffff";
+
 type Props = {
   nodes: Vec2[];
   members: Member[];
@@ -70,6 +75,8 @@ type Props = {
   E: number;
   I: number;
   A: number;
+  staticsDesignId: string | null;
+  staticsDesignName: string;
   onChangeE: (v: number) => void;
   onChangeI: (v: number) => void;
 };
@@ -139,6 +146,11 @@ type ConcreteDesignHandoff = {
   mMin: PeakValue;
 };
 
+type ConcreteDesignSource = {
+  staticsDesignId: string | null;
+  staticsDesignName: string;
+};
+
 type PeakValue = {
   value: number;
   member: number;
@@ -170,6 +182,8 @@ export function Diagrams({
   E,
   I,
   A,
+  staticsDesignId,
+  staticsDesignName,
   onChangeE,
   onChangeI,
 }: Props) {
@@ -403,7 +417,7 @@ export function Diagrams({
 
   const W = 880;
   const PAD = 48;
-  const H_FBD = 180;
+  const BASE_H_FBD = 180;
   const H_R = 130;
   const H_V = 150;
   const H_M = 150;
@@ -421,7 +435,6 @@ export function Diagrams({
       : [];
   const totalStation = Math.max(stationEnds[stationEnds.length - 1] ?? 1, 1);
   const X = (s: number) => PAD + (s / totalStation) * (W - 2 * PAD);
-  const frame = projectFrame(nodes, W, H_FBD, PAD);
 
   const samples: DiagramSample[] = [];
   const reactions: ReactionOut[] =
@@ -468,6 +481,30 @@ export function Diagrams({
         Math.abs(reaction.Rx) + Math.abs(reaction.Ry) + Math.abs(reaction.M) >
           1e-6,
     );
+
+  const loadVisualMax = Math.max(
+    1e-6,
+    ...displayLoads.pointLoads.flatMap(([, fx, fy]) => [
+      Math.abs(fx),
+      Math.abs(fy),
+    ]),
+    ...displayLoads.distLoads.flatMap(([, wi, wj]) => [
+      Math.abs(wi),
+      Math.abs(wj),
+    ]),
+  );
+  const fbdInsets = fbdDiagramInsets({
+    pad: PAD,
+    pointLoads: displayLoads.pointLoads,
+    distLoads: displayLoads.distLoads,
+    reactions: pointReactions,
+    fixity,
+    pointSprings,
+    uniformSprings,
+  });
+  const H_FBD = fbdPanelHeight(nodes, W, BASE_H_FBD, fbdInsets);
+  const frame = projectFrameWithInsets(nodes, W, H_FBD, fbdInsets);
+
   if (state.kind === "ok") {
     state.data.members.forEach((mr, idx) => {
       const station0 = idx === 0 ? 0 : stationEnds[idx - 1];
@@ -511,17 +548,6 @@ export function Diagrams({
   // ─── FBD ───────────────────────────────────────────────────────────
   const fbdLoads: React.ReactElement[] = [];
   const fbdLoadLabels: React.ReactElement[] = [];
-  const loadVisualMax = Math.max(
-    1e-6,
-    ...displayLoads.pointLoads.flatMap(([, fx, fy]) => [
-      Math.abs(fx),
-      Math.abs(fy),
-    ]),
-    ...displayLoads.distLoads.flatMap(([, wi, wj]) => [
-      Math.abs(wi),
-      Math.abs(wj),
-    ]),
-  );
 
   // Distributed loads: render each as a top bar + downward arrows onto beam.
   displayLoads.distLoads.forEach(([mIdx, wi, wj], k) => {
@@ -768,6 +794,25 @@ export function Diagrams({
           ))}
         </g>,
       );
+    } else if (rx) {
+      const dir = cx < W / 2 ? -1 : 1;
+      const wallX = cx + dir * 16;
+      supports.push(
+        <g key={`fx-${k}`} stroke={PALETTE.support} fill="none">
+          <line x1={cx} y1={cy} x2={wallX} y2={cy} strokeWidth={1.2} />
+          <line x1={wallX} y1={cy - 14} x2={wallX} y2={cy + 14} strokeWidth={1.2} />
+          {Array.from({ length: 5 }, (_, i) => (
+            <line
+              key={i}
+              x1={wallX}
+              y1={cy - 12 + i * 6}
+              x2={wallX + dir * 6}
+              y2={cy - 16 + i * 6}
+              strokeWidth={1.2}
+            />
+          ))}
+        </g>,
+      );
     }
   });
 
@@ -845,16 +890,21 @@ export function Diagrams({
   pointReactions.forEach((r, k) => {
     if (!nodes[r.node]) return;
     const cx = frame.X(nodes[r.node][0]);
-    const cy = frame.Y(nodes[r.node][1]) + 30;
-    const L = (Math.abs(r.Ry) / Rmax) * 36 + 4;
-    if (Math.abs(r.Ry) > 1e-3) {
+    const nodeY = frame.Y(nodes[r.node][1]);
+    const rxY = nodeY + 24;
+    const ryY = nodeY + 34;
+    const Lx = (Math.abs(r.Rx) / Rmax) * 36 + 4;
+    const Ly = (Math.abs(r.Ry) / Rmax) * 36 + 4;
+    if (Math.abs(r.Rx) > 1e-3) {
+      const tipX = r.Rx > 0 ? cx + 3 : cx - 3;
+      const tailX = r.Rx > 0 ? tipX - Lx : tipX + Lx;
       reactionEls.push(
         <Arrow
           key={`rx-${k}`}
-          x1={cx}
-          y1={cy + L}
-          x2={cx}
-          y2={cy + 3}
+          x1={tailX}
+          y1={rxY}
+          x2={tipX}
+          y2={rxY}
           color={PALETTE.reaction}
           head={6}
         />,
@@ -862,14 +912,42 @@ export function Diagrams({
       reactionEls.push(
         <text
           key={`rx-t-${k}`}
-          x={cx}
-          y={cy + L + 12}
+          x={(tailX + tipX) / 2}
+          y={rxY - 8}
           fill={PALETTE.reaction}
           fontSize={10}
           textAnchor="middle"
           fontFamily="var(--font-mono)"
         >
-          {fmt(r.Ry)}
+          Rx {fmt(r.Rx)}
+        </text>,
+      );
+    }
+    if (Math.abs(r.Ry) > 1e-3) {
+      const nearY = ryY + 3;
+      const farY = ryY + Ly;
+      reactionEls.push(
+        <Arrow
+          key={`ry-${k}`}
+          x1={cx}
+          y1={r.Ry > 0 ? farY : nearY}
+          x2={cx}
+          y2={r.Ry > 0 ? nearY : farY}
+          color={PALETTE.reaction}
+          head={6}
+        />,
+      );
+      reactionEls.push(
+        <text
+          key={`ry-t-${k}`}
+          x={cx}
+          y={farY + 14}
+          fill={PALETTE.reaction}
+          fontSize={10}
+          textAnchor="middle"
+          fontFamily="var(--font-mono)"
+        >
+          Ry {fmt(r.Ry)}
         </text>,
       );
     }
@@ -883,6 +961,24 @@ export function Diagrams({
       label={`N${idx + 1}`}
     />
   ));
+  const hingeEls = hinges.map(([memberIdx, end], idx) => {
+    const member = members[memberIdx];
+    if (!member) return null;
+    const nodeIdx = end === "i" ? member[0] : member[1];
+    const node = nodes[nodeIdx];
+    if (!node) return null;
+    return (
+      <circle
+        key={`hinge-${idx}`}
+        cx={frame.X(node[0])}
+        cy={frame.Y(node[1])}
+        r={HINGE_MARKER_RADIUS}
+        fill={HINGE_MARKER_FILL}
+        stroke={PALETTE.support}
+        strokeWidth={1.4}
+      />
+    );
+  });
   const topGuideEls = nodes.map(([x, y], idx) => {
     const guideX = frame.X(x);
     const guideY = frame.Y(y);
@@ -981,9 +1077,12 @@ export function Diagrams({
   const concreteDesign = useMemo(
     () =>
       state.kind === "ok"
-        ? buildConcreteDesignHandoff(state.runs, state.label)
+        ? buildConcreteDesignHandoff(state.runs, state.label, {
+            staticsDesignId,
+            staticsDesignName,
+          })
         : null,
-    [state],
+    [state, staticsDesignId, staticsDesignName],
   );
 
   const openConcreteDesign = () => {
@@ -1187,6 +1286,7 @@ export function Diagrams({
           {fbdLoads}
           {reactionEls}
           {nodeLabelEls}
+          {hingeEls}
           {fbdLoadLabels}
           <SectionLabel
             x={W - PAD}
@@ -1448,6 +1548,7 @@ export function Diagrams({
 function buildConcreteDesignHandoff(
   runs: AnalysisRun[],
   analysisLabel: string,
+  source: ConcreteDesignSource,
 ): ConcreteDesignHandoff {
   let vMax = emptyPeak();
   let vMin = emptyPeak();
@@ -1505,6 +1606,13 @@ function buildConcreteDesignHandoff(
     muNegStation: handoffNumber(mMin.station),
     vuStation: handoffNumber(vuPeak.station),
   });
+  if (source.staticsDesignId) {
+    params.set("staticsDesignId", source.staticsDesignId);
+  }
+  const staticsDesignName = source.staticsDesignName.trim();
+  if (staticsDesignName) {
+    params.set("staticsDesignName", staticsDesignName);
+  }
   return {
     href: `${concreteBeamBaseUrl()}?${params.toString()}`,
     muPos,
@@ -2114,11 +2222,105 @@ function formatNodeLabel(node: number): string {
   return `N${node + 1}`;
 }
 
-function projectFrame(
+type DiagramInsets = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
+function fbdDiagramInsets({
+  pad,
+  pointLoads,
+  distLoads,
+  reactions,
+  fixity,
+  pointSprings,
+  uniformSprings,
+}: {
+  pad: number;
+  pointLoads: CombinedLoads["pointLoads"];
+  distLoads: CombinedLoads["distLoads"];
+  reactions: ReactionOut[];
+  fixity: Fixity[];
+  pointSprings: PointSpring[];
+  uniformSprings: UniformSpring[];
+}): DiagramInsets {
+  let topExtra = 24;
+  let bottomExtra = fixity.some(([, rx, ry, rm]) => rx || ry || rm) ? 28 : 0;
+  let sideExtra = 12;
+
+  if (distLoads.some(([, wi, wj]) => wi !== 0 || wj !== 0)) {
+    topExtra = Math.max(topExtra, LOAD_ARROW_MAX + 34);
+  }
+  if (pointLoads.some(([, , fy]) => fy < 0)) {
+    topExtra = Math.max(topExtra, LOAD_ARROW_MAX + 22);
+  }
+  if (pointLoads.some(([, fx, , moment = 0]) => fx !== 0 || moment !== 0)) {
+    topExtra = Math.max(topExtra, 38);
+  }
+  if (pointLoads.some(([, , fy]) => fy > 0)) {
+    bottomExtra = Math.max(bottomExtra, LOAD_ARROW_MAX + 24);
+  }
+  if (reactions.some((reaction) => Math.abs(reaction.Ry) > 1e-3)) {
+    bottomExtra = Math.max(bottomExtra, LOAD_ARROW_MAX + 72);
+  }
+  if (reactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3)) {
+    bottomExtra = Math.max(bottomExtra, 48);
+    sideExtra = Math.max(sideExtra, LOAD_ARROW_MAX + 18);
+  }
+  if (pointSprings.some(([, kx]) => kx !== 0)) {
+    sideExtra = Math.max(sideExtra, 54);
+  }
+  if (pointSprings.some(([, , ky]) => ky !== 0)) {
+    bottomExtra = Math.max(bottomExtra, 56);
+  }
+  if (pointSprings.some(([, , , km]) => km !== 0)) {
+    topExtra = Math.max(topExtra, 46);
+    sideExtra = Math.max(sideExtra, 44);
+  }
+  if (uniformSprings.some(([, k]) => k !== 0)) {
+    bottomExtra = Math.max(bottomExtra, 70);
+    sideExtra = Math.max(sideExtra, 54);
+  }
+
+  return {
+    top: pad + topExtra,
+    right: pad + sideExtra,
+    bottom: pad + bottomExtra,
+    left: pad + sideExtra,
+  };
+}
+
+function fbdPanelHeight(
+  nodes: Vec2[],
+  width: number,
+  baseHeight: number,
+  insets: DiagramInsets,
+): number {
+  const xs = nodes.map((node) => node[0]);
+  const ys = nodes.map((node) => node[1]);
+  const xmin = xs.length ? Math.min(...xs) : 0;
+  const xmax = xs.length ? Math.max(...xs) : 1;
+  const ymin = ys.length ? Math.min(...ys) : 0;
+  const ymax = ys.length ? Math.max(...ys) : 0;
+  const xspan = Math.max(xmax - xmin, 1);
+  const yspan = Math.max(ymax - ymin, 0);
+  const usableW = Math.max(width - insets.left - insets.right, 1);
+  const projectedGeometryHeight = yspan * (usableW / xspan);
+  return Math.ceil(
+    Math.max(
+      baseHeight,
+      projectedGeometryHeight + insets.top + insets.bottom,
+    ),
+  );
+}
+
+function projectFrameWithInsets(
   nodes: Vec2[],
   width: number,
   height: number,
-  pad: number,
+  insets: DiagramInsets,
 ): { X: (x: number) => number; Y: (y: number) => number } {
   const xs = nodes.map((n) => n[0]);
   const ys = nodes.map((n) => n[1]);
@@ -2126,16 +2328,21 @@ function projectFrame(
   const xmax = xs.length ? Math.max(...xs) : 1;
   const ymin = ys.length ? Math.min(...ys) : 0;
   const ymax = ys.length ? Math.max(...ys) : 1;
+  const rawYspan = ymax - ymin;
   const xspan = Math.max(xmax - xmin, 1);
-  const yspan = Math.max(ymax - ymin, 1);
-  const scale = Math.min((width - 2 * pad) / xspan, (height - 2 * pad) / yspan);
+  const yspan = Math.max(rawYspan, 1);
+  const usableW = Math.max(width - insets.left - insets.right, 1);
+  const usableH = Math.max(height - insets.top - insets.bottom, 1);
+  const scale = Math.min(usableW / xspan, usableH / yspan);
   const contentW = xspan * scale;
   const contentH = yspan * scale;
-  const ox = (width - contentW) / 2;
-  const oy = (height - contentH) / 2;
+  const ox = insets.left + (usableW - contentW) / 2;
+  const oy = insets.top + (usableH - contentH) / 2;
+  const flatY = oy + contentH / 2;
   return {
     X: (x: number) => ox + (x - xmin) * scale,
-    Y: (y: number) => height - (oy + (y - ymin) * scale),
+    Y: (y: number) =>
+      Math.abs(rawYspan) < 1e-9 ? flatY : oy + (ymax - y) * scale,
   };
 }
 
@@ -2176,7 +2383,7 @@ function NodeLabel({
 }) {
   return (
     <g pointerEvents="none">
-      <circle cx={x} cy={y} r={2.6} fill={PALETTE.support} />
+      <circle cx={x} cy={y} r={NODE_MARKER_RADIUS} fill={PALETTE.support} />
       <text
         x={x + 7}
         y={y - 8}
@@ -2240,7 +2447,8 @@ function GraphValueLabels({
         const value = sample[field];
         const x = X(sample.station);
         const yCurve = yAxis - (value / max) * (height / 2 - 12);
-        const y = yCurve + (value >= 0 ? -6 : 14);
+        const rawY = yCurve + (value >= 0 ? -6 : 14);
+        const y = clamp(rawY, yAxis - height / 2 + 14, yAxis + height / 2 - 6);
         return (
           <GraphValueLabel
             key={`${field}-${index}-${sample.station}`}
@@ -2727,4 +2935,8 @@ function fmt(n: number): string {
   if (a < 0.1) return n.toFixed(3);
   if (a < 10) return n.toFixed(2);
   return n.toFixed(1);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

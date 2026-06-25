@@ -441,6 +441,8 @@ export default function Home() {
               E={E}
               I={I}
               A={10}
+              staticsDesignId={designId}
+              staticsDesignName={normalizedDesignName(name)}
               onChangeE={setE}
               onChangeI={setI}
             />

@@ -20,6 +20,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   designs       Design[]
+  beamDesigns   BeamDesign[]
   aiApiKey      AiApiKey?
 }
 
@@ -78,8 +79,24 @@ model Design {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  beamDesigns      BeamDesign[]
 
   @@index([userId])
+}
+
+model BeamDesign {
+  id              String   @id @default(cuid())
+  userId          String
+  staticsDesignId String
+  name            String
+  data            Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  staticsDesign   Design   @relation(fields: [staticsDesignId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([staticsDesignId])
 }
 
 model AiApiKey {

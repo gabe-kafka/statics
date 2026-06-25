@@ -10,7 +10,7 @@
     "db:deploy": "prisma migrate deploy",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsc -p tsconfig.test.json && node .test-dist/test/solver/solver.test.js",
+    "test": "tsc -p tsconfig.test.json && find .test-dist/test -name '*.test.js' -print0 | xargs -0 node --test",
     "scenarios": "tsc -p tsconfig.scenarios.json && node .scenario-dist/scripts/run-scenarios.js"
   },
   "dependencies": {
@@ -26,6 +26,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "agent-browser": "^0.30.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "prisma": "^6.19.3",

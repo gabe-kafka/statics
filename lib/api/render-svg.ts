@@ -62,6 +62,26 @@ const W = 880;
 const PAD = 48;
 const LOAD_ARROW_MAX = 56;
 const LOAD_ARROW_MIN = 8;
+const NODE_MARKER_RADIUS = 2.6;
+const HINGE_MARKER_RADIUS = NODE_MARKER_RADIUS * 2;
+const HINGE_MARKER_FILL = "#ffffff";
+
+type DiagramInsets = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
+type ProjectedFrame = {
+  X: (x: number) => number;
+  Y: (y: number) => number;
+};
+
+type FbdLayout = {
+  height: number;
+  frame: ProjectedFrame;
+};
 
 type Plot = "fbd" | "R" | "V" | "M" | "theta" | "delta";
 
@@ -93,7 +113,8 @@ export function renderSvg(
 
   const palette = paletteFor(req.theme);
 
-  const fbd = renderFbd(req, res, ux, unit, uW, palette);
+  const fbdLayout = resolveFbdLayout(req, res);
+  const fbd = renderFbd(req, res, ux, unit, uW, palette, fbdLayout);
   const R = renderCurve(res, X, stationEnds, "R", palette.shear, "R(l)", palette, {
     unit: "klf",
   });
@@ -117,7 +138,7 @@ export function renderSvg(
     M,
     theta,
     delta,
-    fbdGuidePoints(req.nodes),
+    fbdGuidePoints(req.nodes, fbdLayout),
     totalStation,
     X,
     ux,
@@ -138,28 +159,33 @@ function memberStationEnds(members: Pick<SolveResponse, "members">["members"]): 
   return out;
 }
 
-function projectFrame(
+function projectFrameWithInsets(
   nodes: SolveRequest["nodes"],
   width: number,
   height: number,
-  pad: number,
-): { X: (x: number) => number; Y: (y: number) => number } {
+  insets: DiagramInsets,
+): ProjectedFrame {
   const xs = nodes.map((n) => n[0]);
   const ys = nodes.map((n) => n[1]);
   const xmin = xs.length ? Math.min(...xs) : 0;
   const xmax = xs.length ? Math.max(...xs) : 1;
   const ymin = ys.length ? Math.min(...ys) : 0;
   const ymax = ys.length ? Math.max(...ys) : 1;
+  const rawYspan = ymax - ymin;
   const xspan = Math.max(xmax - xmin, 1);
-  const yspan = Math.max(ymax - ymin, 1);
-  const scale = Math.min((width - 2 * pad) / xspan, (height - 2 * pad) / yspan);
+  const yspan = Math.max(rawYspan, 1);
+  const usableW = Math.max(width - insets.left - insets.right, 1);
+  const usableH = Math.max(height - insets.top - insets.bottom, 1);
+  const scale = Math.min(usableW / xspan, usableH / yspan);
   const contentW = xspan * scale;
   const contentH = yspan * scale;
-  const ox = (width - contentW) / 2;
-  const oy = (height - contentH) / 2;
+  const ox = insets.left + (usableW - contentW) / 2;
+  const oy = insets.top + (usableH - contentH) / 2;
+  const flatY = oy + contentH / 2;
   return {
     X: (x: number) => ox + (x - xmin) * scale,
-    Y: (y: number) => height - (oy + (y - ymin) * scale),
+    Y: (y: number) =>
+      Math.abs(rawYspan) < 1e-9 ? flatY : oy + (ymax - y) * scale,
   };
 }
 
@@ -172,9 +198,106 @@ function svgWrap(
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="background:${palette.bg};font-family:ui-monospace,Menlo,monospace;display:block">${body}</svg>`;
 }
 
-function fbdGuidePoints(nodes: SolveRequest["nodes"]): { x: number; y: number }[] {
-  const frame = projectFrame(nodes, W, 220, PAD);
+function fbdGuidePoints(
+  nodes: SolveRequest["nodes"],
+  layout: FbdLayout,
+): { x: number; y: number }[] {
+  const frame = layout.frame;
   return nodes.map(([x, y]) => ({ x: frame.X(x), y: frame.Y(y) }));
+}
+
+function resolveFbdLayout(
+  req: SolveRequest,
+  res: Pick<SolveResponse, "reactions">,
+): FbdLayout {
+  const insets = fbdDiagramInsets(req, res);
+  const height = fbdPanelHeight(req.nodes, W, 220, insets);
+  return {
+    height,
+    frame: projectFrameWithInsets(req.nodes, W, height, insets),
+  };
+}
+
+function fbdDiagramInsets(
+  req: SolveRequest,
+  res: Pick<SolveResponse, "reactions">,
+): DiagramInsets {
+  let topExtra = 24;
+  let bottomExtra = req.supports.some(
+    (support) => support.Rx || support.Ry || support.Rm,
+  )
+    ? 28
+    : 0;
+  let sideExtra = 12;
+
+  if ((req.distLoads ?? []).some((load) => load.wi !== 0 || load.wj !== 0)) {
+    topExtra = Math.max(topExtra, LOAD_ARROW_MAX + 34);
+  }
+  if ((req.pointLoads ?? []).some((load) => load.Fy < 0)) {
+    topExtra = Math.max(topExtra, LOAD_ARROW_MAX + 22);
+  }
+  if (
+    (req.pointLoads ?? []).some(
+      (load) => load.Fx !== 0 || (load.M ?? 0) !== 0,
+    )
+  ) {
+    topExtra = Math.max(topExtra, 38);
+  }
+  if ((req.pointLoads ?? []).some((load) => load.Fy > 0)) {
+    bottomExtra = Math.max(bottomExtra, LOAD_ARROW_MAX + 24);
+  }
+  if (res.reactions.some((reaction) => Math.abs(reaction.Ry) > 1e-3)) {
+    bottomExtra = Math.max(bottomExtra, LOAD_ARROW_MAX + 72);
+  }
+  if (res.reactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3)) {
+    bottomExtra = Math.max(bottomExtra, 48);
+    sideExtra = Math.max(sideExtra, LOAD_ARROW_MAX + 18);
+  }
+  if ((req.pointSprings ?? []).some((spring) => spring.Kx !== 0)) {
+    sideExtra = Math.max(sideExtra, 54);
+  }
+  if ((req.pointSprings ?? []).some((spring) => spring.Ky !== 0)) {
+    bottomExtra = Math.max(bottomExtra, 56);
+  }
+  if ((req.pointSprings ?? []).some((spring) => spring.Km !== 0)) {
+    topExtra = Math.max(topExtra, 46);
+    sideExtra = Math.max(sideExtra, 44);
+  }
+  if ((req.uniformSprings ?? []).some((spring) => spring.k !== 0)) {
+    bottomExtra = Math.max(bottomExtra, 70);
+    sideExtra = Math.max(sideExtra, 54);
+  }
+
+  return {
+    top: PAD + topExtra,
+    right: PAD + sideExtra,
+    bottom: PAD + bottomExtra,
+    left: PAD + sideExtra,
+  };
+}
+
+function fbdPanelHeight(
+  nodes: SolveRequest["nodes"],
+  width: number,
+  baseHeight: number,
+  insets: DiagramInsets,
+): number {
+  const xs = nodes.map((node) => node[0]);
+  const ys = nodes.map((node) => node[1]);
+  const xmin = xs.length ? Math.min(...xs) : 0;
+  const xmax = xs.length ? Math.max(...xs) : 1;
+  const ymin = ys.length ? Math.min(...ys) : 0;
+  const ymax = ys.length ? Math.max(...ys) : 0;
+  const xspan = Math.max(xmax - xmin, 1);
+  const yspan = Math.max(ymax - ymin, 0);
+  const usableW = Math.max(width - insets.left - insets.right, 1);
+  const projectedGeometryHeight = yspan * (usableW / xspan);
+  return Math.ceil(
+    Math.max(
+      baseHeight,
+      projectedGeometryHeight + insets.top + insets.bottom,
+    ),
+  );
 }
 
 function escapeText(s: string): string {
@@ -191,6 +314,10 @@ function fmt(n: number): string {
   if (a < 0.1) return n.toFixed(3);
   if (a < 10) return n.toFixed(2);
   return n.toFixed(1);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function scaledLoadArrowLength(value: number, max: number): number {
@@ -456,9 +583,10 @@ function renderFbd(
   unitLbl: string,
   uW: (wKipPerIn: number) => number,
   palette: Palette,
+  layout: FbdLayout,
 ): string {
-  const H = 220;
-  const frame = projectFrame(req.nodes, W, H, PAD);
+  const H = layout.height;
+  const frame = layout.frame;
   const out: string[] = [];
 
   // Distributed loads: callers (e.g. the structural-terminal builder)
@@ -639,6 +767,18 @@ function renderFbd(
         `<circle cx="${cx}" cy="${cy + 8}" r="6" fill="${palette.support}" stroke="${palette.support}"/>`,
         `<line x1="${cx - 14}" y1="${cy + 16}" x2="${cx + 14}" y2="${cy + 16}" stroke="${palette.support}" stroke-width="1.2"/>`,
       );
+    } else if (sup.Rx) {
+      const dir = cx < W / 2 ? -1 : 1;
+      const wallX = cx + dir * 16;
+      out.push(
+        `<line x1="${cx}" y1="${cy}" x2="${wallX}" y2="${cy}" stroke="${palette.support}" stroke-width="1.2"/>`,
+        `<line x1="${wallX}" y1="${cy - 14}" x2="${wallX}" y2="${cy + 14}" stroke="${palette.support}" stroke-width="1.2"/>`,
+      );
+      for (let i = 0; i < 5; i++) {
+        out.push(
+          `<line x1="${wallX}" y1="${cy - 12 + i * 6}" x2="${wallX + dir * 6}" y2="${cy - 16 + i * 6}" stroke="${palette.support}" stroke-width="1.2"/>`,
+        );
+      }
     }
   }
 
@@ -650,12 +790,34 @@ function renderFbd(
   for (const r of res.reactions) {
     if (!req.nodes[r.node]) continue;
     const cx = frame.X(req.nodes[r.node][0]);
-    const cy = frame.Y(req.nodes[r.node][1]) + 30;
-    const L = (Math.abs(r.Ry) / Rmax) * 36 + 4;
-    if (Math.abs(r.Ry) > 1e-3) {
-      out.push(arrow(cx, cy + L, cx, cy + 3, palette.reaction, 6));
+    const nodeY = frame.Y(req.nodes[r.node][1]);
+    const rxY = nodeY + 24;
+    const ryY = nodeY + 34;
+    const Lx = (Math.abs(r.Rx) / Rmax) * 36 + 4;
+    const Ly = (Math.abs(r.Ry) / Rmax) * 36 + 4;
+    if (Math.abs(r.Rx) > 1e-3) {
+      const tipX = r.Rx > 0 ? cx + 3 : cx - 3;
+      const tailX = r.Rx > 0 ? tipX - Lx : tipX + Lx;
+      out.push(arrow(tailX, rxY, tipX, rxY, palette.reaction, 6));
       out.push(
-        `<text x="${cx}" y="${cy + L + 12}" fill="${palette.reaction}" font-size="10" text-anchor="middle">${escapeText(fmt(r.Ry))}</text>`,
+        `<text x="${(tailX + tipX) / 2}" y="${rxY - 8}" fill="${palette.reaction}" font-size="10" text-anchor="middle">${escapeText(`Rx ${fmt(r.Rx)}`)}</text>`,
+      );
+    }
+    if (Math.abs(r.Ry) > 1e-3) {
+      const nearY = ryY + 3;
+      const farY = ryY + Ly;
+      out.push(
+        arrow(
+          cx,
+          r.Ry > 0 ? farY : nearY,
+          cx,
+          r.Ry > 0 ? nearY : farY,
+          palette.reaction,
+          6,
+        ),
+      );
+      out.push(
+        `<text x="${cx}" y="${farY + 14}" fill="${palette.reaction}" font-size="10" text-anchor="middle">${escapeText(`Ry ${fmt(r.Ry)}`)}</text>`,
       );
     }
   }
@@ -666,8 +828,18 @@ function renderFbd(
     const cx = frame.X(x);
     const cy = frame.Y(y);
     out.push(
-      `<circle cx="${cx}" cy="${cy}" r="2.6" fill="${palette.support}"/>`,
+      `<circle cx="${cx}" cy="${cy}" r="${NODE_MARKER_RADIUS}" fill="${palette.support}"/>`,
       `<text x="${cx + 7}" y="${cy - 8}" fill="${palette.support}" stroke="${palette.bg}" stroke-width="3" paint-order="stroke" font-size="10">${escapeText(`N${i + 1}`)}</text>`,
+    );
+  }
+
+  // hinge markers
+  for (const hinge of req.hinges ?? []) {
+    const nodeIdx = hingeNodeIndex(req, hinge);
+    if (nodeIdx === undefined || !req.nodes[nodeIdx]) continue;
+    const [x, y] = req.nodes[nodeIdx];
+    out.push(
+      `<circle cx="${frame.X(x)}" cy="${frame.Y(y)}" r="${HINGE_MARKER_RADIUS}" fill="${HINGE_MARKER_FILL}" stroke="${palette.support}" stroke-width="1.4"/>`,
     );
   }
 
@@ -683,6 +855,17 @@ function renderFbd(
   );
 
   return svgWrap(W, H, out.join(""), palette);
+}
+
+function hingeNodeIndex(
+  req: SolveRequest,
+  hinge: NonNullable<SolveRequest["hinges"]>[number],
+): number | undefined {
+  const end = hinge.end ?? hinge.memberSide;
+  if (hinge.member !== undefined && (end === "i" || end === "j")) {
+    return req.members[hinge.member]?.[end];
+  }
+  return hinge.node;
 }
 
 /**
@@ -767,7 +950,8 @@ function renderCurve(
   const labels = extrema
     .map((e) => {
       const labelText = `${fmt(e[field] * valueScale)}${opts.unit ? ` ${opts.unit}` : ""}`;
-      const labelY = yOf(e[field]) + (e[field] >= 0 ? -6 : 14);
+      const rawLabelY = yOf(e[field]) + (e[field] >= 0 ? -6 : 14);
+      const labelY = clamp(rawLabelY, 14, H - 6);
       return graphValueLabel(X(e.x), labelY, labelText);
     })
     .join("");
@@ -812,8 +996,14 @@ function renderAll(
   // strip outer <svg> wrappers from each panel and stack them in one big SVG
   const strip = (s: string): string =>
     s.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
+  const heightOf = (s: string, fallback: number): number => {
+    const match = s.match(/viewBox="0 0 [\d.]+ ([\d.]+)"/);
+    if (!match) return fallback;
+    const height = Number(match[1]);
+    return Number.isFinite(height) && height > 0 ? height : fallback;
+  };
   const panels = [
-    { svg: fbd, h: 220 },
+    { svg: fbd, h: heightOf(fbd, 220) },
     { svg: R, h: 150 },
     { svg: V, h: 150 },
     { svg: M, h: 150 },
