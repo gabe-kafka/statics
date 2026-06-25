@@ -153,7 +153,8 @@ function buildUserInput(
         pointLoads: "(node, Fy, case) transverse/vertical point loads only",
         axialLoads: "(node, Fx, case) axial/horizontal point loads only",
         pointMoments: "(node, M, case) point moments only",
-        distLoads: "(member, w_i, w_j, case)",
+        distLoads:
+          "(member, w_i, w_j, case, projected) where projected is 1 for horizontal-plan projected snow load and 0 for member-length load",
         fixity: "(node, Rx, Ry, Mz) with 1 restrained and 0 free",
         pointSprings: "(node, Kx, Ky, Km)",
         uniformSprings: "(member, k/in/ft)",

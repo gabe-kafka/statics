@@ -43,6 +43,7 @@ export type DistLoadRow = [
   wi: number,
   wj: number,
   loadCase: string,
+  projected: boolean,
 ];
 export type UniformSpringRow = [
   member: number,
@@ -109,7 +110,7 @@ export const INPUTS: readonly InputSpec[] = [
   {
     key: "distLoads",
     label: "DIST LOADS",
-    columns: ["member", "w_i", "w_j", "case"],
+    columns: ["member", "w_i", "w_j", "case", "projected"],
   },
   { key: "fixity", label: "FIXITY", columns: ["node", "Rx", "Ry", "Mz"] },
   {
@@ -176,7 +177,7 @@ export function defaultRowForInput(spec: InputSpec, rowIndex: number): string[] 
     spec.key === "pointMoments"
   )
     return ["0", "0", "D"];
-  if (spec.key === "distLoads") return ["0", "0", "0", "D"];
+  if (spec.key === "distLoads") return ["0", "0", "0", "D", "0"];
   return spec.columns.map(() => "0");
 }
 
@@ -358,6 +359,7 @@ export function parseFields(fields: Fields): ParsedDesignFields {
           Number(r[1]) || 0,
           Number(r[2]) || 0,
           r[3]?.trim() || defaultCase,
+          isTruthyCell(r[4] ?? ""),
         ] as DistLoadRow,
     ),
     pointSprings: parseRows(fields.pointSprings).map(

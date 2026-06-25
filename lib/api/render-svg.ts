@@ -304,6 +304,21 @@ function fbdPanelHeight(
   );
 }
 
+function projectedLoadScale(
+  req: SolveRequest,
+  load: NonNullable<SolveRequest["distLoads"]>[number],
+): number {
+  if (!load.projected) return 1;
+  const member = req.members[load.member];
+  if (!member) return 1;
+  const a = req.nodes[member.i];
+  const b = req.nodes[member.j];
+  if (!a || !b) return 1;
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (length < 1e-12) return 0;
+  return Math.abs(b[0] - a[0]) / length;
+}
+
 function escapeText(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -606,7 +621,15 @@ function renderFbd(
   // with matching w at each shared node. Aggregate those runs back
   // into one rendered band so the FBD shows ONE label per real load
   // instead of N copies of the same number.
-  type Bar = { x0: number; x1: number; w0: number; w1: number };
+  type Bar = {
+    x0: number;
+    x1: number;
+    w0: number;
+    w1: number;
+    visualW0: number;
+    visualW1: number;
+    projected: boolean;
+  };
   const bars: Bar[] = [];
   for (const dl of req.distLoads ?? []) {
     const m = req.members[dl.member];
@@ -616,31 +639,49 @@ function renderFbd(
     if (!a || !b) continue;
     const x0 = a[0];
     const x1 = b[0];
+    const projected = !!dl.projected;
+    const visualScale = projectedLoadScale(req, dl);
+    const visualW0 = dl.wi * visualScale;
+    const visualW1 = dl.wj * visualScale;
     const last = bars[bars.length - 1];
     if (
       last &&
+      last.projected === projected &&
       Math.abs(last.x1 - x0) < 1e-6 &&
-      Math.abs(last.w1 - dl.wi) < 1e-9
+      Math.abs(last.w1 - dl.wi) < 1e-9 &&
+      Math.abs(last.visualW1 - visualW0) < 1e-9
     ) {
       // Continuous with the previous run — extend it.
       last.x1 = x1;
       last.w1 = dl.wj;
+      last.visualW1 = visualW1;
     } else {
-      bars.push({ x0, x1, w0: dl.wi, w1: dl.wj });
+      bars.push({
+        x0,
+        x1,
+        w0: dl.wi,
+        w1: dl.wj,
+        visualW0,
+        visualW1,
+        projected,
+      });
     }
   }
 
   const loadVisualMax = Math.max(
     1e-6,
     ...(req.pointLoads ?? []).flatMap((p) => [Math.abs(p.Fx), Math.abs(p.Fy)]),
-    ...bars.flatMap((b) => [Math.abs(uW(b.w0)), Math.abs(uW(b.w1))]),
+    ...bars.flatMap((b) => [
+      Math.abs(uW(b.visualW0)),
+      Math.abs(uW(b.visualW1)),
+    ]),
   );
   for (const bar of bars) {
     const xa = frame.X(bar.x0);
     const xb = frame.X(bar.x1);
     const yBase = frame.Y(req.nodes[0]?.[1] ?? 0);
-    const ha = scaledLoadArrowLength(uW(bar.w0), loadVisualMax);
-    const hb = scaledLoadArrowLength(uW(bar.w1), loadVisualMax);
+    const ha = scaledLoadArrowLength(uW(bar.visualW0), loadVisualMax);
+    const hb = scaledLoadArrowLength(uW(bar.visualW1), loadVisualMax);
     const ya = yBase - ha - 2;
     const yb = yBase - hb - 2;
     out.push(
@@ -659,10 +700,12 @@ function renderFbd(
     const midY = Math.min(ya, yb) - 6;
     const w0Disp = uW(bar.w0);
     const w1Disp = uW(bar.w1);
+    const prefix = bar.projected ? "p=" : "";
+    const suffix = bar.projected ? " projected" : "";
     const lbl =
       Math.abs(bar.w0 - bar.w1) < 1e-9
-        ? `${fmt(w0Disp)} k/${unitLbl}`
-        : `${fmt(w0Disp)} → ${fmt(w1Disp)} k/${unitLbl}`;
+        ? `${prefix}${fmt(w0Disp)} k/${unitLbl}${suffix}`
+        : `${prefix}${fmt(w0Disp)} → ${fmt(w1Disp)} k/${unitLbl}${suffix}`;
     out.push(
       `<text x="${midX}" y="${midY}" fill="${palette.load}" font-size="10" text-anchor="middle">${escapeText(lbl)}</text>`,
     );

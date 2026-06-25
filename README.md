@@ -28,7 +28,7 @@ curl -X POST https://statics.kafkadesign.io/api/v1/solve \
     "pointLoads": [{"node":1,"Fx":0,"Fy":-10,"M":0}],
     "distLoads": [
       {"member":0,"wi":-2.98,"wj":-2.98},
-      {"member":1,"wi":-3.50,"wj":-5.64}
+      {"member":1,"wi":-3.50,"wj":-5.64,"projected":true}
     ]
   }'
 ```
@@ -77,11 +77,12 @@ distributed stiffness: force per transverse deflection per member length
 In the web app, load cases and load combinations are table-driven. `LOAD CASES`
 uses `(case, label)`, `LOAD COMBINATIONS` uses one row per combo with factor
 columns matching the load cases such as `(combo, D factor, L factor, EQ factor)`,
-and point/distributed load rows end with a `case` column.
+point load rows end with a `case` column, and distributed load rows use
+`(member, w_i, w_j, case, projected)`.
 
 ### Sign convention
 
-World `+y` is up. Loads given in `+y`; downward loads are negative. Point-load `M` is a nodal moment, positive counterclockwise. Units pass through (kip / in / ksi works; the solver doesn't enforce them). Each member's `E`, `I`, and `A` are honored independently as `E·I` and `E·A`; mixed sections are supported.
+World `+y` is up. Loads given in `+y`; downward loads are negative. Point-load `M` is a nodal moment, positive counterclockwise. Distributed loads are vertical global-y loads per member length by default. Set `projected` to true for plan-projected snow-style loads; `w_i`/`w_j` are then interpreted per horizontal projected length and converted by `|dx|/L` before solving. Units pass through (kip / in / ksi works; the solver doesn't enforce them). Each member's `E`, `I`, and `A` are honored independently as `E·I` and `E·A`; mixed sections are supported.
 
 ### Failure modes
 

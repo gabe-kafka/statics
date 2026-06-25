@@ -41,7 +41,7 @@ const SPEC = {
                 ],
                 pointLoads: [{ node: 1, Fx: 0, Fy: -10, M: 0 }],
                 distLoads: [
-                  { member: 0, wi: -2.98, wj: -2.98 },
+                  { member: 0, wi: -2.98, wj: -2.98, projected: false },
                   { member: 1, wi: -3.5, wj: -5.64 },
                 ],
                 pointSprings: [{ node: 1, Kx: 0, Ky: 100, Km: 0 }],
@@ -149,7 +149,8 @@ const SPEC = {
           },
           distLoads: {
             type: "array",
-            description: "Linearly-varying member-perpendicular loads (global -y projection).",
+            description:
+              "Linearly-varying global-y distributed loads. By default wi/wj are per member length. Set projected=true when wi/wj are per horizontal projected length, such as plan-projected snow load.",
             items: {
               type: "object",
               required: ["member", "wi", "wj"],
@@ -157,6 +158,12 @@ const SPEC = {
                 member: { type: "integer" },
                 wi: { type: "number", description: "intensity at member start" },
                 wj: { type: "number", description: "intensity at member end" },
+                projected: {
+                  type: "boolean",
+                  default: false,
+                  description:
+                    "When true, wi/wj are vertical load intensities per horizontal projection and are converted to member-length intensities by |dx|/L before solving.",
+                },
               },
             },
           },

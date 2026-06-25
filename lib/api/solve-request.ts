@@ -27,9 +27,7 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
       pointLoads: (normalizedBody.pointLoads ?? []).map(
         (p) => [p.node, p.Fx, p.Fy, p.M ?? 0] as [number, number, number, number],
       ),
-      distLoads: (normalizedBody.distLoads ?? []).map(
-        (d) => [d.member, d.wi, d.wj] as [number, number, number],
-      ),
+      distLoads: normalizedDistributedLoads(normalizedBody),
       pointSprings: (normalizedBody.pointSprings ?? []).map(
         (s) =>
           [s.node, s.Kx, s.Ky, s.Km] as [number, number, number, number],
@@ -149,6 +147,30 @@ export function solveRequest(body: SolveRequest): SolveResponse | ApiError {
   }
 
   return response;
+}
+
+function normalizedDistributedLoads(
+  body: SolveRequest,
+): [number, number, number][] {
+  return (body.distLoads ?? []).map((load) => {
+    if (!load.projected) {
+      return [load.member, load.wi, load.wj] as [number, number, number];
+    }
+    const member = body.members[load.member];
+    if (!member) return [load.member, load.wi, load.wj];
+    const a = body.nodes[member.i];
+    const b = body.nodes[member.j];
+    if (!a || !b) return [load.member, load.wi, load.wj];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const horizontalProjection = Math.abs(b[0] - a[0]);
+    const projectedScale =
+      length > 1e-12 ? horizontalProjection / length : 0;
+    return [
+      load.member,
+      load.wi * projectedScale,
+      load.wj * projectedScale,
+    ] as [number, number, number];
+  });
 }
 
 function normalizeHinges(body: SolveRequest): [number, "i" | "j"][] {

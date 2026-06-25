@@ -167,10 +167,17 @@ export function solveRequestFromFields(
     pointLoads: combinedLoads.pointLoads
       .filter(([, fx, fy, moment = 0]) => fx !== 0 || fy !== 0 || moment !== 0)
       .map(([node, Fx, Fy, M = 0]) => ({ node, Fx, Fy, M })),
-    distLoads: combinedLoads.distLoads.map(([member, wi, wj]) => ({
+    distLoads: combinedLoads.distLoads.map(([
       member,
       wi,
       wj,
+      ,
+      projected,
+    ]) => ({
+      member,
+      wi,
+      wj,
+      projected,
     })),
     pointSprings: pointSprings
       .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)

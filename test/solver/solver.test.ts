@@ -43,8 +43,8 @@ test("load combinations scale load rows by case", () => {
       [2, 3, -4, 0, "L"],
     ],
     distLoads: [
-      [0, -2, -2, "D"],
-      [1, -1, -3, "L"],
+      [0, -2, -2, "D", false],
+      [1, -1, -3, "L", true],
     ],
   });
 
@@ -53,8 +53,8 @@ test("load combinations scale load rows by case", () => {
     [2, 4.800000000000001, -6.4, 0, "L"],
   ]);
   assert.deepEqual(combined.distLoads, [
-    [0, -2.4, -2.4, "D"],
-    [1, -1.6, -4.800000000000001, "L"],
+    [0, -2.4, -2.4, "D", false],
+    [1, -1.6, -4.800000000000001, "L", true],
   ]);
 });
 
@@ -70,13 +70,13 @@ test("load cases isolate matching load rows without combination factors", () => 
       [2, 3, -4, 0, "L"],
     ],
     distLoads: [
-      [0, -2, -2, "D"],
-      [1, -1, -3, "L"],
+      [0, -2, -2, "D", false],
+      [1, -1, -3, "L", true],
     ],
   });
 
   assert.deepEqual(combined.pointLoads, [[2, 3, -4, 0, "L"]]);
-  assert.deepEqual(combined.distLoads, [[1, -1, -3, "L"]]);
+  assert.deepEqual(combined.distLoads, [[1, -1, -3, "L", true]]);
 });
 
 test("formula-style load combination names define their own case factors", () => {
@@ -227,6 +227,35 @@ test("API solve auto-splits members at inline nodes for point loads and moments"
   );
   assert.equal(result.members.length, 4);
   assert.ok(Number.isFinite(result.peaks.M.value));
+});
+
+test("API projected distributed loads use horizontal projection length", () => {
+  const result = solveRequest({
+    nodes: [
+      [0, 0],
+      [6, 8],
+    ],
+    members: [{ i: 0, j: 1, E: 29000, I: 100, A: 10 }],
+    supports: [
+      { node: 0, Rx: true, Ry: true, Rm: false },
+      { node: 1, Rx: false, Ry: true, Rm: false },
+    ],
+    pointLoads: [],
+    distLoads: [{ member: 0, wi: -2, wj: -2, projected: true }],
+    samplesPerMember: 4,
+    include: ["data"],
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const totalRy = result.reactions.reduce(
+    (sum, reaction) => sum + reaction.Ry,
+    0,
+  );
+  assert.ok(
+    Math.abs(totalRy - 12) < 1e-6,
+    `expected 12 k total Ry, got ${totalRy}`,
+  );
 });
 
 test("uniform spring authoring supports compression-only checkbox", () => {

@@ -107,6 +107,11 @@ export function validate(req: SolveRequest): ApiError | null {
         field: `distLoads[${d}]`,
         value: dl,
       });
+    if (dl.projected !== undefined && typeof dl.projected !== "boolean")
+      return err("invalid_input", `distLoads[${d}].projected must be boolean when provided.`, {
+        field: `distLoads[${d}].projected`,
+        value: dl.projected,
+      });
   }
 
   for (let s = 0; s < (req.pointSprings ?? []).length; s++) {

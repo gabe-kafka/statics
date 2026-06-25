@@ -507,19 +507,24 @@ function isNodeReferenceCell(spec: InputSpec, ci: number): boolean {
 }
 
 function isCheckboxCell(spec: InputSpec, ci: number): boolean {
+  if (spec.key === "distLoads") return ci === 4;
   if (spec.key === "uniformSprings") return ci === 2;
   return spec.key === "fixity" && ci >= 1 && ci <= 3;
 }
 
 function isLoadCaseCell(spec: InputSpec, ci: number): boolean {
+  return loadCaseColumn(spec) === ci;
+}
+
+function loadCaseColumn(spec: InputSpec): number | null {
   if (
     spec.key === "pointLoads" ||
     spec.key === "axialLoads" ||
     spec.key === "pointMoments"
   )
-    return ci === 2;
-  if (spec.key === "distLoads") return ci === 3;
-  return false;
+    return 2;
+  if (spec.key === "distLoads") return 3;
+  return null;
 }
 
 function hasRowLabels(spec: InputSpec): boolean {
@@ -561,7 +566,8 @@ function defaultRowForModal(
     return row;
 
   const cases = caseOptionsForCell(loadCaseOptions, "").filter(Boolean);
-  const caseColumn = row.length - 1;
+  const caseColumn = loadCaseColumn(spec);
+  if (caseColumn === null) return row;
   if (cases.length === 0 || cases.includes(row[caseColumn])) return row;
   const next = [...row];
   next[caseColumn] = cases[rowIndex % cases.length];

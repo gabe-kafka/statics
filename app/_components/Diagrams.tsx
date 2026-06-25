@@ -492,10 +492,10 @@ export function Diagrams({
       Math.abs(fx),
       Math.abs(fy),
     ]),
-    ...displayLoads.distLoads.flatMap(([, wi, wj]) => [
-      Math.abs(wi),
-      Math.abs(wj),
-    ]),
+    ...displayLoads.distLoads.flatMap(([member, wi, wj, , projected]) => {
+      const scale = projectedLoadScale(nodes, members, member, !!projected);
+      return [Math.abs(wi * scale), Math.abs(wj * scale)];
+    }),
   );
   const fbdInsets = fbdDiagramInsets({
     pad: PAD,
@@ -554,18 +554,21 @@ export function Diagrams({
   const fbdLoadLabels: React.ReactElement[] = [];
 
   // Distributed loads: render each as a top bar + downward arrows onto beam.
-  displayLoads.distLoads.forEach(([mIdx, wi, wj], k) => {
+  displayLoads.distLoads.forEach(([mIdx, wi, wj, , projected], k) => {
     const m = members[mIdx];
     if (!m) return;
     const a = nodes[m[0]];
     const b = nodes[m[1]];
     if (!a || !b) return;
+    const loadScale = projectedLoadScale(nodes, members, mIdx, !!projected);
+    const wiVisual = wi * loadScale;
+    const wjVisual = wj * loadScale;
     const xa = frame.X(a[0]);
     const xb = frame.X(b[0]);
     const yaBeam = frame.Y(a[1]);
     const ybBeam = frame.Y(b[1]);
-    const ha = scaledLoadArrowLength(wi, loadVisualMax);
-    const hb = scaledLoadArrowLength(wj, loadVisualMax);
+    const ha = scaledLoadArrowLength(wiVisual, loadVisualMax);
+    const hb = scaledLoadArrowLength(wjVisual, loadVisualMax);
     const y_a = yaBeam - ha - 2;
     const y_b = ybBeam - hb - 2;
 
@@ -621,10 +624,12 @@ export function Diagrams({
     }
     const midX = (xa + xb) / 2;
     const midY = Math.min(y_a, y_b) - 12;
+    const loadSymbol = projected ? "p" : "w";
+    const loadSuffix = projected ? " proj" : "";
     const label =
       Math.abs(wi - wj) < 1e-9
-        ? `w=${fmt(Math.abs(wi))} klf`
-        : `w=${fmt(Math.abs(wi))}->${fmt(Math.abs(wj))} klf`;
+        ? `${loadSymbol}=${fmt(Math.abs(wi))} klf${loadSuffix}`
+        : `${loadSymbol}=${fmt(Math.abs(wi))}->${fmt(Math.abs(wj))} klf${loadSuffix}`;
     fbdLoadLabels.push(
       <LoadLabel
         key={`dl-t-${k}`}
@@ -1927,10 +1932,17 @@ function buildSolveRequest({
     pointLoads: combinedLoads.pointLoads
       .filter(([, fx, fy, moment = 0]) => fx !== 0 || fy !== 0 || moment !== 0)
       .map(([node, Fx, Fy, M = 0]) => ({ node, Fx, Fy, M })),
-    distLoads: combinedLoads.distLoads.map(([member, wi, wj]) => ({
+    distLoads: combinedLoads.distLoads.map(([
       member,
       wi,
       wj,
+      ,
+      projected,
+    ]) => ({
+      member,
+      wi,
+      wj,
+      projected,
     })),
     pointSprings: pointSprings
       .filter(([, Kx, Ky, Km]) => Kx !== 0 || Ky !== 0 || Km !== 0)
@@ -2322,6 +2334,23 @@ function fbdPanelHeight(
       projectedGeometryHeight + insets.top + insets.bottom,
     ),
   );
+}
+
+function projectedLoadScale(
+  nodes: Vec2[],
+  members: Member[],
+  memberIndex: number,
+  projected: boolean,
+): number {
+  if (!projected) return 1;
+  const member = members[memberIndex];
+  if (!member) return 1;
+  const a = nodes[member[0]];
+  const b = nodes[member[1]];
+  if (!a || !b) return 1;
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (length < 1e-12) return 0;
+  return Math.abs(b[0] - a[0]) / length;
 }
 
 function projectFrameWithInsets(

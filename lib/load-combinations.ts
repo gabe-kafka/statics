@@ -15,7 +15,13 @@ export type CombinedLoads = {
     M: number,
     loadCase?: string,
   ][];
-  distLoads: [member: number, wi: number, wj: number, loadCase?: string][];
+  distLoads: [
+    member: number,
+    wi: number,
+    wj: number,
+    loadCase: string,
+    projected: boolean,
+  ][];
 };
 
 export type LoadCombinationKind = "service" | "strength";
@@ -182,14 +188,15 @@ function combineLoadsWithFactors({
       })
       .filter(([, fx, fy, moment]) => fx !== 0 || fy !== 0 || moment !== 0),
     distLoads: distLoads
-      .map(([member, wi, wj, loadCase]) => {
+      .map(([member, wi, wj, loadCase, projected]) => {
         const sourceCase = loadCase || defaultCase;
         const factor = factorForCase(factors, sourceCase);
-        return [member, wi * factor, wj * factor, sourceCase] as [
+        return [member, wi * factor, wj * factor, sourceCase, !!projected] as [
           number,
           number,
           number,
           string,
+          boolean,
         ];
       })
       .filter(([, wi, wj]) => wi !== 0 || wj !== 0),

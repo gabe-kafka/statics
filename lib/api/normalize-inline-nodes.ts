@@ -177,6 +177,7 @@ function remapDistributedLoads(
         member: segment.member,
         wi: interpolate(load.wi, load.wj, segment.t0),
         wj: interpolate(load.wi, load.wj, segment.t1),
+        projected: load.projected,
       });
     }
   }
