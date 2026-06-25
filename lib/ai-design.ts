@@ -158,7 +158,7 @@ function buildUserInput(
         fixity: "(node, Rx, Ry, Mz) with 1 restrained and 0 free",
         pointSprings: "(node, Kx, Ky, Km)",
         uniformSprings: "(member, k/in/ft)",
-        hinges: "(member, end) where end is i or j",
+        hinges: "end moment releases as (member, end) where end is i or j",
       },
     },
     null,

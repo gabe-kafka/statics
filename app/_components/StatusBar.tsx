@@ -52,7 +52,12 @@ export function StatusBar({
       <ToolButton label="SEL" active={tool === "select"} onClick={() => onSetTool("select")} />
       <ToolButton label="NODE" active={tool === "node"} onClick={() => onSetTool("node")} />
       <ToolButton label="MBR" active={tool === "member"} onClick={() => onSetTool("member")} />
-      <ToolButton label="HGE" active={tool === "hinge"} onClick={() => onSetTool("hinge")} />
+      <ToolButton
+        label="EMR"
+        active={tool === "hinge"}
+        onClick={() => onSetTool("hinge")}
+        title="End moment release"
+      />
 
       <div className="mx-2 h-4 w-px bg-border" />
 
@@ -103,15 +108,19 @@ function ToolButton({
   label,
   active,
   onClick,
+  title,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={title}
+      aria-label={title ?? label}
       className={
         "h-6 px-2 uppercase tracking-[0.08em] transition-colors " +
         (active

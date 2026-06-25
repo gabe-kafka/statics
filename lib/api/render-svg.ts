@@ -66,6 +66,7 @@ const REACTION_ARROW_MAX = 42;
 const REACTION_ARROW_MIN = 18;
 const RX_REACTION_Y_OFFSET = 32;
 const RY_REACTION_Y_OFFSET = 58;
+const MAX_FBD_GEOMETRY_HEIGHT = 120;
 const NODE_MARKER_RADIUS = 2.6;
 const HINGE_MARKER_RADIUS = NODE_MARKER_RADIUS * 2;
 const HINGE_MARKER_FILL = "#ffffff";
@@ -142,7 +143,7 @@ export function renderSvg(
     M,
     theta,
     delta,
-    fbdGuidePoints(req.nodes, fbdLayout),
+    stationGuidePoints(stationEnds, X, fbdLayout.height),
     totalStation,
     X,
     ux,
@@ -159,6 +160,27 @@ function memberStationEnds(members: Pick<SolveResponse, "members">["members"]): 
   for (const member of members) {
     acc += member.L;
     out.push(acc);
+  }
+  return out;
+}
+
+function stationGuidePoints(
+  stationEnds: number[],
+  X: (x: number) => number,
+  y: number,
+): { x: number; y: number }[] {
+  return uniqueStationValues([0, ...stationEnds]).map((station) => ({
+    x: X(station),
+    y,
+  }));
+}
+
+function uniqueStationValues(values: number[]): number[] {
+  const out: number[] = [];
+  for (const value of values) {
+    if (!Number.isFinite(value)) continue;
+    if (out.some((existing) => Math.abs(existing - value) < 1e-6)) continue;
+    out.push(value);
   }
   return out;
 }
@@ -200,14 +222,6 @@ function svgWrap(
   palette: Palette,
 ): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="background:${palette.bg};font-family:ui-monospace,Menlo,monospace;display:block">${body}</svg>`;
-}
-
-function fbdGuidePoints(
-  nodes: SolveRequest["nodes"],
-  layout: FbdLayout,
-): { x: number; y: number }[] {
-  const frame = layout.frame;
-  return nodes.map(([x, y]) => ({ x: frame.X(x), y: frame.Y(y) }));
 }
 
 function resolveFbdLayout(
@@ -296,10 +310,14 @@ function fbdPanelHeight(
   const yspan = Math.max(ymax - ymin, 0);
   const usableW = Math.max(width - insets.left - insets.right, 1);
   const projectedGeometryHeight = yspan * (usableW / xspan);
+  const compactGeometryHeight = Math.min(
+    projectedGeometryHeight,
+    MAX_FBD_GEOMETRY_HEIGHT,
+  );
   return Math.ceil(
     Math.max(
       baseHeight,
-      projectedGeometryHeight + insets.top + insets.bottom,
+      compactGeometryHeight + insets.top + insets.bottom,
     ),
   );
 }

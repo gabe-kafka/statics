@@ -1,5 +1,5 @@
 {
-  "name": "member end hinges",
+  "name": "member end moment releases",
   "request": {
     "nodes": [[0, 0], [10, 0]],
     "members": [{ "i": 0, "j": 1, "E": 29000, "I": 100, "A": 10 }],

@@ -100,6 +100,7 @@ const REACTION_ARROW_MAX = 42;
 const REACTION_ARROW_MIN = 18;
 const RX_REACTION_Y_OFFSET = 32;
 const RY_REACTION_Y_OFFSET = 58;
+const MAX_FBD_GEOMETRY_HEIGHT = 120;
 const CONCRETE_BEAM_URL =
   process.env.NEXT_PUBLIC_CONCRETE_BEAM_URL ??
   "https://concrete-beam.vercel.app";
@@ -205,6 +206,9 @@ export function Diagrams({
     [],
   );
   const [showConcreteDesignDialog, setShowConcreteDesignDialog] = useState(false);
+  const [exportingPng, setExportingPng] = useState(false);
+  const topSvgRef = useRef<SVGSVGElement>(null);
+  const bottomSvgRef = useRef<SVGSVGElement>(null);
   const reqIdRef = useRef(0);
   useEffect(() => {
     try {
@@ -992,22 +996,20 @@ export function Diagrams({
       />
     );
   });
-  const topGuideEls = nodes.map(([x, y], idx) => {
-    const guideX = frame.X(x);
-    const guideY = frame.Y(y);
-    return (
-      <ProjectionGuide
-        key={`top-guide-${idx}`}
-        x={guideX}
-        y1={guideY}
-        y2={H_TOP}
-      />
-    );
-  });
-  const bottomGuideEls = nodes.map(([x], idx) => (
+  const stationGuides =
+    state.kind === "ok" ? uniqueStationValues([0, ...stationEnds]) : [];
+  const topGuideEls = stationGuides.map((station, idx) => (
+    <ProjectionGuide
+      key={`top-guide-${idx}`}
+      x={X(station)}
+      y1={H_FBD}
+      y2={H_TOP}
+    />
+  ));
+  const bottomGuideEls = stationGuides.map((station, idx) => (
     <ProjectionGuide
       key={`bottom-guide-${idx}`}
-      x={frame.X(x)}
+      x={X(station)}
       y1={0}
       y2={H_BOT + 14}
     />
@@ -1107,6 +1109,23 @@ export function Diagrams({
     if (!concreteDesign) return;
     setShowConcreteDesignDialog(false);
     window.open(concreteDesign.href, "_blank", "noopener,noreferrer");
+  };
+
+  const exportCurrentResultsPng = async () => {
+    if (state.kind !== "ok" || !topSvgRef.current || !bottomSvgRef.current) return;
+    setExportingPng(true);
+    try {
+      await exportResultsPng({
+        topSvg: topSvgRef.current,
+        bottomSvg: bottomSvgRef.current,
+        designName: staticsDesignName,
+        viewLabel: activeViewLabel,
+      });
+    } catch (err) {
+      window.alert((err as Error).message || "PNG export failed.");
+    } finally {
+      setExportingPng(false);
+    }
   };
 
   return (
@@ -1247,6 +1266,21 @@ export function Diagrams({
         </button>
         <button
           type="button"
+          onClick={exportCurrentResultsPng}
+          disabled={state.kind !== "ok" || exportingPng}
+          aria-label="Export current results as PNG"
+          className="h-7 border px-2 font-mono text-[10px] uppercase tracking-[0.08em] disabled:opacity-40"
+          style={{
+            background: "var(--bg)",
+            borderColor: "var(--border)",
+            color: state.kind === "ok" ? PALETTE.fg : "var(--muted)",
+          }}
+          title="Export current results as PNG"
+        >
+          {exportingPng ? "PNG..." : "PNG"}
+        </button>
+        <button
+          type="button"
           onClick={openConcreteDesign}
           disabled={!concreteDesign}
           className="min-h-7 border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] disabled:opacity-40"
@@ -1272,6 +1306,7 @@ export function Diagrams({
         />
       )}
       <svg
+        ref={topSvgRef}
         viewBox={`0 0 ${W} ${H_TOP}`}
         width="100%"
         style={{ display: "block" }}
@@ -1477,6 +1512,7 @@ export function Diagrams({
       </div>
 
       <svg
+        ref={bottomSvgRef}
         viewBox={`0 0 ${W} ${H_BOT + 14}`}
         width="100%"
         style={{ display: "block" }}
@@ -1556,6 +1592,263 @@ export function Diagrams({
       </svg>
     </div>
   );
+}
+
+async function exportResultsPng({
+  topSvg,
+  bottomSvg,
+  designName,
+  viewLabel,
+}: {
+  topSvg: SVGSVGElement;
+  bottomSvg: SVGSVGElement;
+  designName: string;
+  viewLabel: string;
+}): Promise<void> {
+  const topBox = svgViewBox(topSvg);
+  const bottomBox = svgViewBox(bottomSvg);
+  const width = Math.max(topBox.width, bottomBox.width);
+  const headerHeight = 66;
+  const gap = 14;
+  const footerHeight = 16;
+  const height = headerHeight + topBox.height + gap + bottomBox.height + footerHeight;
+  const scale = Math.max(2, Math.ceil(window.devicePixelRatio || 1));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(width * scale);
+  canvas.height = Math.ceil(height * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("PNG export failed: canvas is unavailable.");
+
+  const palette = publicationPalette();
+  ctx.scale(scale, scale);
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, width, height);
+  drawPublicationHeader(ctx, {
+    width,
+    designName,
+    viewLabel,
+    generatedAt: new Date(),
+    palette,
+  });
+
+  const [topImage, bottomImage] = await Promise.all([
+    svgElementToImage(topSvg, topBox, palette),
+    svgElementToImage(bottomSvg, bottomBox, palette),
+  ]);
+  ctx.drawImage(topImage.image, 0, headerHeight, topBox.width, topBox.height);
+  ctx.drawImage(
+    bottomImage.image,
+    0,
+    headerHeight + topBox.height + gap,
+    bottomBox.width,
+    bottomBox.height,
+  );
+  topImage.revoke();
+  bottomImage.revoke();
+
+  const blob = await canvasToPngBlob(canvas);
+  downloadBlob(blob, publicationFilename(designName, viewLabel));
+}
+
+function drawPublicationHeader(
+  ctx: CanvasRenderingContext2D,
+  {
+    width,
+    designName,
+    viewLabel,
+    generatedAt,
+    palette,
+  }: {
+    width: number;
+    designName: string;
+    viewLabel: string;
+    generatedAt: Date;
+    palette: PublicationPalette;
+  },
+) {
+  const title = designName.trim() || "untitled";
+  ctx.fillStyle = palette.surface;
+  ctx.fillRect(0, 0, width, 66);
+  ctx.fillStyle = palette.text;
+  ctx.font = "600 17px ui-monospace, Menlo, monospace";
+  ctx.textBaseline = "top";
+  ctx.fillText(title, 24, 15);
+  ctx.fillStyle = palette.muted;
+  ctx.font = "11px ui-monospace, Menlo, monospace";
+  ctx.fillText(`VIEW ${viewLabel}`, 24, 42);
+  const stamp = `PNG SNAPSHOT ${formatPublicationDate(generatedAt)}`;
+  const stampWidth = ctx.measureText(stamp).width;
+  ctx.fillText(stamp, width - 24 - stampWidth, 42);
+  ctx.strokeStyle = palette.border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 65.5);
+  ctx.lineTo(width, 65.5);
+  ctx.stroke();
+}
+
+type PublicationPalette = {
+  bg: string;
+  surface: string;
+  text: string;
+  muted: string;
+  dim: string;
+  border: string;
+  subtle: string;
+  accent: string;
+  red: string;
+  amber: string;
+  green: string;
+  cyan: string;
+  fontMono: string;
+};
+
+function publicationPalette(): PublicationPalette {
+  const root = getComputedStyle(document.documentElement);
+  const body = getComputedStyle(document.body);
+  const cssVar = (name: string, fallback: string) =>
+    root.getPropertyValue(name).trim() || fallback;
+  return {
+    bg: cssVar("--bg", "#ffffff"),
+    surface: cssVar("--surface", "#f5f5f5"),
+    text: cssVar("--text", "#1a1a1a"),
+    muted: cssVar("--muted", "#6b6b6b"),
+    dim: cssVar("--dim", "#505050"),
+    border: cssVar("--border", "#d4d4d4"),
+    subtle: cssVar("--subtle", "#e8e8e8"),
+    accent: cssVar("--accent", "#0057ff"),
+    red: cssVar("--red", "#dc2626"),
+    amber: cssVar("--amber", "#d97706"),
+    green: cssVar("--green", "#16a34a"),
+    cyan: cssVar("--cyan", "#06b6d4"),
+    fontMono: body.fontFamily || "ui-monospace, Menlo, monospace",
+  };
+}
+
+function svgViewBox(svg: SVGSVGElement): { width: number; height: number } {
+  const base = svg.viewBox.baseVal;
+  if (base.width > 0 && base.height > 0) {
+    return { width: base.width, height: base.height };
+  }
+  const bounds = svg.getBoundingClientRect();
+  return {
+    width: Math.max(bounds.width, 1),
+    height: Math.max(bounds.height, 1),
+  };
+}
+
+async function svgElementToImage(
+  svg: SVGSVGElement,
+  box: { width: number; height: number },
+  palette: PublicationPalette,
+): Promise<{ image: HTMLImageElement; revoke: () => void }> {
+  const source = serializeSvgForExport(svg, box, palette);
+  const url = URL.createObjectURL(
+    new Blob([source], { type: "image/svg+xml;charset=utf-8" }),
+  );
+  const image = new Image();
+  image.decoding = "async";
+  image.src = url;
+  try {
+    await image.decode();
+  } catch (err) {
+    URL.revokeObjectURL(url);
+    throw err;
+  }
+  return {
+    image,
+    revoke: () => URL.revokeObjectURL(url),
+  };
+}
+
+function serializeSvgForExport(
+  svg: SVGSVGElement,
+  box: { width: number; height: number },
+  palette: PublicationPalette,
+): string {
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.setAttribute("width", String(box.width));
+  clone.setAttribute("height", String(box.height));
+  inlineSvgCssVariables(clone, palette);
+  return new XMLSerializer().serializeToString(clone);
+}
+
+function inlineSvgCssVariables(svg: SVGSVGElement, palette: PublicationPalette) {
+  const values: Record<string, string> = {
+    "--bg": palette.bg,
+    "--surface": palette.surface,
+    "--text": palette.text,
+    "--muted": palette.muted,
+    "--dim": palette.dim,
+    "--border": palette.border,
+    "--subtle": palette.subtle,
+    "--accent": palette.accent,
+    "--red": palette.red,
+    "--amber": palette.amber,
+    "--green": palette.green,
+    "--cyan": palette.cyan,
+    "--font-mono": palette.fontMono,
+    "--font-jetbrains-mono": palette.fontMono,
+  };
+  const walk = document.createTreeWalker(svg, NodeFilter.SHOW_ELEMENT);
+  let node = walk.currentNode as Element | null;
+  while (node) {
+    Array.from(node.attributes).forEach((attribute) => {
+      if (attribute.value.includes("var(")) {
+        node!.setAttribute(attribute.name, replaceCssVars(attribute.value, values));
+      }
+    });
+    node = walk.nextNode() as Element | null;
+  }
+}
+
+function replaceCssVars(value: string, values: Record<string, string>): string {
+  return value.replace(
+    /var\((--[a-z0-9-]+)(?:,\s*([^)]+))?\)/gi,
+    (match: string, name: string, fallback: string | undefined) =>
+      values[name] ?? fallback?.trim() ?? match,
+  );
+}
+
+function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("PNG export failed: image encoding failed."));
+    }, "image/png");
+  });
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function publicationFilename(designName: string, viewLabel: string): string {
+  const name = slugForFilename(designName || "untitled");
+  const view = slugForFilename(viewLabel || "results");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${name}-${view}-${stamp}.png`;
+}
+
+function slugForFilename(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "untitled";
+}
+
+function formatPublicationDate(date: Date): string {
+  return date.toISOString().replace("T", " ").slice(0, 19) + " UTC";
 }
 
 function buildConcreteDesignHandoff(
@@ -2328,12 +2621,26 @@ function fbdPanelHeight(
   const yspan = Math.max(ymax - ymin, 0);
   const usableW = Math.max(width - insets.left - insets.right, 1);
   const projectedGeometryHeight = yspan * (usableW / xspan);
+  const compactGeometryHeight = Math.min(
+    projectedGeometryHeight,
+    MAX_FBD_GEOMETRY_HEIGHT,
+  );
   return Math.ceil(
     Math.max(
       baseHeight,
-      projectedGeometryHeight + insets.top + insets.bottom,
+      compactGeometryHeight + insets.top + insets.bottom,
     ),
   );
+}
+
+function uniqueStationValues(values: number[]): number[] {
+  const out: number[] = [];
+  for (const value of values) {
+    if (!Number.isFinite(value)) continue;
+    if (out.some((existing) => Math.abs(existing - value) < 1e-6)) continue;
+    out.push(value);
+  }
+  return out;
 }
 
 function projectedLoadScale(

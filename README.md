@@ -56,7 +56,7 @@ Response (truncated):
 
 Pass `"include": ["data", "svg"]` to also receive the rendered diagrams as SVG strings (FBD, V, M, θ, Δ, plus a stacked `all`).
 
-Use `hinges` for explicit member-end moment releases:
+Use `hinges` for explicit end moment releases:
 
 ```json
 { "hinges": [{ "member": 0, "end": "i" }, { "member": 0, "end": "j" }] }

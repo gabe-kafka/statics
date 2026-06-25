@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { solveRequest } from "../../lib/api/solve-request";
 import type { SolveRequest } from "../../lib/api/types";
 
-test("FBD SVG renders member-end hinges as white circles double the node radius", () => {
+test("FBD SVG renders end moment releases as white circles double the node radius", () => {
   const request: SolveRequest = {
     nodes: [
       [0, 0],
@@ -101,6 +101,49 @@ test("FBD SVG renders net support Rx only for repeated sawtooth bays", () => {
   assert.doesNotMatch(result.svg.fbd, /Rx[LR]/);
   assert.equal((result.svg.fbd.match(/>Rx\s+-?\d/g) ?? []).length, 2);
   assertSvgCoordinatesInsideViewBox(result.svg.fbd, "net Rx sawtooth FBD");
+});
+
+test("stacked SVG keeps tall narrow frames compact and guides by station", () => {
+  const request: SolveRequest = {
+    nodes: [
+      [0, 0],
+      [0, 120],
+      [0, 240],
+    ],
+    members: [
+      { i: 0, j: 1, E: 29000, I: 100, A: 10 },
+      { i: 1, j: 2, E: 29000, I: 100, A: 10 },
+    ],
+    supports: [{ node: 0, Rx: true, Ry: true, Rm: true }],
+    pointLoads: [{ node: 2, Fx: 5, Fy: -12 }],
+    samplesPerMember: 10,
+    include: ["data", "svg"],
+    theme: "light",
+  };
+  const result = solveRequest(request);
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.ok(result.svg?.fbd);
+  assert.ok(result.svg.all);
+  assert.ok(
+    svgHeight(result.svg.fbd) < 520,
+    "expected tall narrow FBD to stay compact",
+  );
+  assert.ok(
+    svgHeight(result.svg.all) < 1300,
+    "expected stacked SVG height to stay bounded",
+  );
+
+  const guideXs = dashedGuideXs(result.svg.all);
+  assert.ok(
+    guideXs.some((x) => x < 60),
+    "expected a guide at the start station",
+  );
+  assert.ok(
+    guideXs.some((x) => x > 820),
+    "expected a guide at the end station",
+  );
 });
 
 test("FBD SVG fuzz keeps generated drawing coordinates inside the viewBox", () => {
@@ -226,6 +269,17 @@ function svgCoordinates(
     }
   }
 
+  return out;
+}
+
+function dashedGuideXs(svg: string): number[] {
+  const out: number[] = [];
+  const guide = /<line\b[^>]*\bstroke-dasharray="3 5"[^>]*>/g;
+  const x1 = /\bx1="(-?\d+(?:\.\d+)?)"/;
+  for (const match of svg.matchAll(guide)) {
+    const x = match[0].match(x1);
+    if (x) out.push(Number(x[1]));
+  }
   return out;
 }
 

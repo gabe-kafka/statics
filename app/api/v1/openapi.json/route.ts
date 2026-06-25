@@ -208,7 +208,7 @@ const SPEC = {
           hinges: {
             type: "array",
             description:
-              "Moment releases at explicit member ends. Use member/end; node/memberSide is accepted as a compatibility alias.",
+              "End moment releases at explicit member ends. Use member/end; node/memberSide is accepted as a compatibility alias.",
             items: {
               type: "object",
               properties: {

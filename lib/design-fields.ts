@@ -123,7 +123,11 @@ export const INPUTS: readonly InputSpec[] = [
     label: "UNIFORM SPRINGS",
     columns: ["member", "k/in/ft", "compression only"],
   },
-  { key: "hinges", label: "HINGES", columns: ["member", "end"] },
+  {
+    key: "hinges",
+    label: "END MOMENT RELEASES",
+    columns: ["member", "end"],
+  },
 ];
 
 export const DEFAULT_FIELDS: Fields = {
