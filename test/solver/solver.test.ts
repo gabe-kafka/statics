@@ -17,6 +17,7 @@ import {
   parseFields,
   type LoadCombination,
 } from "../../lib/design-fields";
+import { lateralMemberSideReactions } from "../../lib/member-side-reactions";
 import { decryptSecret, encryptSecret } from "../../lib/secret-crypto";
 import { solverCases } from "./cases";
 import { assertCase } from "./helpers";
@@ -256,6 +257,79 @@ test("API projected distributed loads use horizontal projection length", () => {
     Math.abs(totalRy - 12) < 1e-6,
     `expected 12 k total Ry, got ${totalRy}`,
   );
+});
+
+test("member-side lateral reactions expose canceled shared support thrust", () => {
+  const nodes: [number, number][] = [
+    [0, 0],
+    [11, 6.5],
+    [32, 0],
+    [43, 6.5],
+    [64, 0],
+    [75, 6.5],
+    [96, 0],
+  ];
+  const members = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 4],
+    [4, 5],
+    [5, 6],
+  ].map(([i, j]) => ({ i, j, E: 29000, I: 100, A: 10 }));
+  const result = solveRequest({
+    nodes,
+    members,
+    supports: [0, 2, 4, 6].map((node) => ({
+      node,
+      Rx: true,
+      Ry: true,
+      Rm: true,
+    })),
+    distLoads: members.map((_, member) => ({
+      member,
+      wi: -0.52,
+      wj: -0.52,
+      projected: true,
+    })),
+    hinges: [
+      { member: 0, end: "j" },
+      { member: 1, end: "i" },
+      { member: 2, end: "j" },
+      { member: 3, end: "i" },
+      { member: 4, end: "j" },
+      { member: 5, end: "i" },
+    ],
+    include: ["data"],
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const netAtMiddle = result.reactions.filter(
+    (reaction) => reaction.node === 2 || reaction.node === 4,
+  );
+  assert.ok(netAtMiddle.every((reaction) => Math.abs(reaction.Rx) < 1e-6));
+
+  const sideReactions = lateralMemberSideReactions({
+    nodes,
+    members: result.members,
+    rxSupportNodes: [0, 2, 4, 6],
+    reactions: result.reactions,
+  });
+  const n3 = sideReactions.filter((reaction) => reaction.node === 2);
+  const n5 = sideReactions.filter((reaction) => reaction.node === 4);
+  assert.deepEqual(
+    n3.map((reaction) => reaction.side),
+    ["left", "right"],
+  );
+  assert.deepEqual(
+    n5.map((reaction) => reaction.side),
+    ["left", "right"],
+  );
+  assert.ok(n3.some((reaction) => reaction.Rx < -3));
+  assert.ok(n3.some((reaction) => reaction.Rx > 3));
+  assert.ok(n5.some((reaction) => reaction.Rx < -3));
+  assert.ok(n5.some((reaction) => reaction.Rx > 3));
 });
 
 test("uniform spring authoring supports compression-only checkbox", () => {

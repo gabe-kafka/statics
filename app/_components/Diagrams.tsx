@@ -36,6 +36,10 @@ import type {
   SolveResponse,
   ApiError,
 } from "@/lib/api/types";
+import {
+  lateralMemberSideReactions,
+  type LateralMemberSideReaction,
+} from "@/lib/member-side-reactions";
 
 // Colors chosen to echo the conjugate-method notebook palette.
 // Surface colors come from page-level CSS vars so the diagrams follow
@@ -485,6 +489,17 @@ export function Diagrams({
         Math.abs(reaction.Rx) + Math.abs(reaction.Ry) + Math.abs(reaction.M) >
           1e-6,
     );
+  const lateralSideReactions =
+    state.kind === "ok"
+      ? lateralMemberSideReactions({
+          nodes,
+          members: state.data.members,
+          rxSupportNodes: fixity
+            .filter(([, rx]) => !!rx)
+            .map(([node]) => node),
+          reactions,
+        })
+      : [];
 
   const loadVisualMax = Math.max(
     1e-6,
@@ -502,6 +517,7 @@ export function Diagrams({
     pointLoads: displayLoads.pointLoads,
     distLoads: displayLoads.distLoads,
     reactions: pointReactions,
+    lateralSideReactions,
     fixity,
     pointSprings,
     uniformSprings,
@@ -895,6 +911,7 @@ export function Diagrams({
   const rxMax = Math.max(
     1,
     ...pointReactions.map((r) => Math.abs(r.Rx)),
+    ...lateralSideReactions.map((r) => Math.abs(r.Rx)),
   );
   const ryMax = Math.max(
     1,
@@ -964,6 +981,39 @@ export function Diagrams({
         </text>,
       );
     }
+  });
+  lateralSideReactions.forEach((r, k) => {
+    if (!nodes[r.node]) return;
+    const cx = frame.X(nodes[r.node][0]);
+    const nodeY = frame.Y(nodes[r.node][1]);
+    const rxY = nodeY + RX_REACTION_Y_OFFSET + sideReactionRowOffset(r.side);
+    const Lx = scaledReactionArrowLength(r.Rx, rxMax);
+    const tipX = r.Rx > 0 ? cx + 3 : cx - 3;
+    const tailX = r.Rx > 0 ? tipX - Lx : tipX + Lx;
+    reactionEls.push(
+      <Arrow
+        key={`rx-side-${k}`}
+        x1={tailX}
+        y1={rxY}
+        x2={tipX}
+        y2={rxY}
+        color={PALETTE.reaction}
+        head={6}
+      />,
+    );
+    reactionEls.push(
+      <text
+        key={`rx-side-t-${k}`}
+        x={(tailX + tipX) / 2}
+        y={rxY + 13}
+        fill={PALETTE.reaction}
+        fontSize={9}
+        textAnchor="middle"
+        fontFamily="var(--font-mono)"
+      >
+        {sideReactionLabel(r)} {fmt(r.Rx)}
+      </text>,
+    );
   });
 
   const nodeLabelEls = nodes.map(([x, y], idx) => (
@@ -2254,6 +2304,7 @@ function fbdDiagramInsets({
   pointLoads,
   distLoads,
   reactions,
+  lateralSideReactions,
   fixity,
   pointSprings,
   uniformSprings,
@@ -2262,6 +2313,7 @@ function fbdDiagramInsets({
   pointLoads: CombinedLoads["pointLoads"];
   distLoads: CombinedLoads["distLoads"];
   reactions: ReactionOut[];
+  lateralSideReactions: LateralMemberSideReaction[];
   fixity: Fixity[];
   pointSprings: PointSpring[];
   uniformSprings: UniformSpring[];
@@ -2285,8 +2337,11 @@ function fbdDiagramInsets({
   if (reactions.some((reaction) => Math.abs(reaction.Ry) > 1e-3)) {
     bottomExtra = Math.max(bottomExtra, LOAD_ARROW_MAX + 72);
   }
-  if (reactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3)) {
-    bottomExtra = Math.max(bottomExtra, RX_REACTION_Y_OFFSET + 30);
+  if (
+    reactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3) ||
+    lateralSideReactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3)
+  ) {
+    bottomExtra = Math.max(bottomExtra, RX_REACTION_Y_OFFSET + 48);
     sideExtra = Math.max(sideExtra, REACTION_ARROW_MAX + 38);
   }
   if (pointSprings.some(([, kx]) => kx !== 0)) {
@@ -2351,6 +2406,20 @@ function projectedLoadScale(
   const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
   if (length < 1e-12) return 0;
   return Math.abs(b[0] - a[0]) / length;
+}
+
+function sideReactionRowOffset(
+  side: LateralMemberSideReaction["side"],
+): number {
+  if (side === "left") return -8;
+  if (side === "right") return 8;
+  return 0;
+}
+
+function sideReactionLabel(reaction: LateralMemberSideReaction): string {
+  if (reaction.side === "left") return "RxL";
+  if (reaction.side === "right") return "RxR";
+  return "Rx";
 }
 
 function projectFrameWithInsets(

@@ -51,6 +51,59 @@ test("FBD SVG renders signed Rx and Ry reactions without clipping", () => {
   assertSvgCoordinatesInsideViewBox(result.svg.fbd, "roof frame FBD");
 });
 
+test("FBD SVG renders member-side Rx when shared support net reaction cancels", () => {
+  const request: SolveRequest = {
+    nodes: [
+      [0, 0],
+      [11, 6.5],
+      [32, 0],
+      [43, 6.5],
+      [64, 0],
+      [75, 6.5],
+      [96, 0],
+    ],
+    members: [
+      { i: 0, j: 1, E: 29000, I: 100, A: 10 },
+      { i: 1, j: 2, E: 29000, I: 100, A: 10 },
+      { i: 2, j: 3, E: 29000, I: 100, A: 10 },
+      { i: 3, j: 4, E: 29000, I: 100, A: 10 },
+      { i: 4, j: 5, E: 29000, I: 100, A: 10 },
+      { i: 5, j: 6, E: 29000, I: 100, A: 10 },
+    ],
+    supports: [0, 2, 4, 6].map((node) => ({
+      node,
+      Rx: true,
+      Ry: true,
+      Rm: true,
+    })),
+    distLoads: Array.from({ length: 6 }, (_, member) => ({
+      member,
+      wi: -0.52,
+      wj: -0.52,
+      projected: true,
+    })),
+    hinges: [
+      { member: 0, end: "j" },
+      { member: 1, end: "i" },
+      { member: 2, end: "j" },
+      { member: 3, end: "i" },
+      { member: 4, end: "j" },
+      { member: 5, end: "i" },
+    ],
+    include: ["data", "svg"],
+    theme: "light",
+  };
+  const result = solveRequest(request);
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.ok(result.svg?.fbd);
+  assert.match(result.svg.fbd, /RxL -?\d/);
+  assert.match(result.svg.fbd, /RxR -?\d/);
+  assert.equal((result.svg.fbd.match(/data-rx-side=/g) ?? []).length, 4);
+  assertSvgCoordinatesInsideViewBox(result.svg.fbd, "member-side Rx FBD");
+});
+
 test("FBD SVG fuzz keeps generated drawing coordinates inside the viewBox", () => {
   for (let seed = 1; seed <= 96; seed++) {
     const request = roofFrameRequest(seed);

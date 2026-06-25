@@ -8,6 +8,7 @@ import type {
   SvgOut,
 } from "./types";
 import type { SolveRequest } from "./types";
+import { lateralMemberSideReactions } from "../member-side-reactions";
 
 type Palette = {
   bg: string;
@@ -212,7 +213,7 @@ function fbdGuidePoints(
 
 function resolveFbdLayout(
   req: SolveRequest,
-  res: Pick<SolveResponse, "reactions">,
+  res: Pick<SolveResponse, "members" | "reactions">,
 ): FbdLayout {
   const insets = fbdDiagramInsets(req, res);
   const height = fbdPanelHeight(req.nodes, W, 220, insets);
@@ -224,7 +225,7 @@ function resolveFbdLayout(
 
 function fbdDiagramInsets(
   req: SolveRequest,
-  res: Pick<SolveResponse, "reactions">,
+  res: Pick<SolveResponse, "members" | "reactions">,
 ): DiagramInsets {
   let topExtra = 24;
   let bottomExtra = req.supports.some(
@@ -253,8 +254,19 @@ function fbdDiagramInsets(
   if (res.reactions.some((reaction) => Math.abs(reaction.Ry) > 1e-3)) {
     bottomExtra = Math.max(bottomExtra, LOAD_ARROW_MAX + 72);
   }
-  if (res.reactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3)) {
-    bottomExtra = Math.max(bottomExtra, RX_REACTION_Y_OFFSET + 30);
+  const lateralSideReactions = lateralMemberSideReactions({
+    nodes: req.nodes,
+    members: res.members,
+    rxSupportNodes: req.supports
+      .filter((support) => support.Rx)
+      .map((support) => support.node),
+    reactions: res.reactions,
+  });
+  if (
+    res.reactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3) ||
+    lateralSideReactions.some((reaction) => Math.abs(reaction.Rx) > 1e-3)
+  ) {
+    bottomExtra = Math.max(bottomExtra, RX_REACTION_Y_OFFSET + 48);
     sideExtra = Math.max(sideExtra, REACTION_ARROW_MAX + 38);
   }
   if ((req.pointSprings ?? []).some((spring) => spring.Kx !== 0)) {
@@ -604,7 +616,7 @@ function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
 
 function renderFbd(
   req: SolveRequest,
-  res: Pick<SolveResponse, "reactions">,
+  res: Pick<SolveResponse, "members" | "reactions">,
   ux: (xInches: number) => number,
   unitLbl: string,
   uW: (wKipPerIn: number) => number,
@@ -837,9 +849,18 @@ function renderFbd(
   }
 
   // reactions
+  const lateralSideReactions = lateralMemberSideReactions({
+    nodes: req.nodes,
+    members: res.members,
+    rxSupportNodes: req.supports
+      .filter((support) => support.Rx)
+      .map((support) => support.node),
+    reactions: res.reactions,
+  });
   const rxMax = Math.max(
     1,
     ...res.reactions.map((r) => Math.abs(r.Rx)),
+    ...lateralSideReactions.map((r) => Math.abs(r.Rx)),
   );
   const ryMax = Math.max(
     1,
@@ -878,6 +899,19 @@ function renderFbd(
         `<text x="${cx}" y="${farY + 14}" fill="${palette.reaction}" font-size="10" text-anchor="middle">${escapeText(`Ry ${fmt(r.Ry)}`)}</text>`,
       );
     }
+  }
+  for (const [idx, r] of lateralSideReactions.entries()) {
+    if (!req.nodes[r.node]) continue;
+    const cx = frame.X(req.nodes[r.node][0]);
+    const nodeY = frame.Y(req.nodes[r.node][1]);
+    const rxY = nodeY + RX_REACTION_Y_OFFSET + sideReactionRowOffset(r.side);
+    const Lx = scaledReactionArrowLength(r.Rx, rxMax);
+    const tipX = r.Rx > 0 ? cx + 3 : cx - 3;
+    const tailX = r.Rx > 0 ? tipX - Lx : tipX + Lx;
+    out.push(arrow(tailX, rxY, tipX, rxY, palette.reaction, 6));
+    out.push(
+      `<text data-rx-side="${idx}" x="${(tailX + tipX) / 2}" y="${rxY + 13}" fill="${palette.reaction}" font-size="9" text-anchor="middle">${escapeText(`${sideReactionLabel(r.side)} ${fmt(r.Rx)}`)}</text>`,
+    );
   }
 
   // node labels
@@ -924,6 +958,18 @@ function hingeNodeIndex(
     return req.members[hinge.member]?.[end];
   }
   return hinge.node;
+}
+
+function sideReactionRowOffset(side: "left" | "center" | "right"): number {
+  if (side === "left") return -8;
+  if (side === "right") return 8;
+  return 0;
+}
+
+function sideReactionLabel(side: "left" | "center" | "right"): string {
+  if (side === "left") return "RxL";
+  if (side === "right") return "RxR";
+  return "Rx";
 }
 
 /**
