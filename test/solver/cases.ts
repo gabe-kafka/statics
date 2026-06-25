@@ -558,6 +558,22 @@ export const solverCases: SolverCase[] = [
     },
   },
   {
+    name: "vertical member receives global gravity distributed load through axial projection",
+    input: base({
+      nodes: [
+        [0, 0],
+        [0, 10],
+      ],
+      members: [[0, 1]],
+      fixity: [[0, 1, 1, 1]],
+      pointLoads: [],
+      distLoads: [[0, -2, -2]],
+    }),
+    expect: {
+      reactions: [{ node: 0, Rx: 0, Ry: 20, M: 0 }],
+    },
+  },
+  {
     name: "unstable beam with no horizontal restraint fails",
     input: base({
       nodes: [

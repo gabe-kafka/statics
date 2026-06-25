@@ -226,15 +226,25 @@ function gaussSolve(A: number[][], b: number[]): number[] | null {
   return x;
 }
 
-// Equivalent nodal loads (in member local frame) for a linearly varying
-// distributed load of intensity q_i at s=0 and q_j at s=L applied in +local-y.
-// Sign convention: a positive q gives positive (+y) nodal forces, so if the
-// applied load is downward (q<0), the equivalent nodal loads are downward too.
+// Equivalent nodal loads (in member local frame) for linearly varying
+// distributed loads applied in +local-x and +local-y.
+// Sign convention: positive q gives positive nodal forces in the matching
+// local direction, so if the applied load is downward (q<0), the equivalent
+// nodal loads are downward after rotation back to global coordinates.
 // Returned as [N_i, V_i, M_i, N_j, V_j, M_j] in local DOF order.
-function equivNodalLocal(qi: number, qj: number, L: number): number[] {
+function equivNodalLocal(
+  qxi: number,
+  qxj: number,
+  qyi: number,
+  qyj: number,
+  L: number,
+): number[] {
+  const Ni = (L * (2 * qxi + qxj)) / 6;
+  const Nj = (L * (qxi + 2 * qxj)) / 6;
+
   // Superposition: uniform (qi) + triangular 0→(qj − qi).
-  const u = qi;
-  const t = qj - qi;
+  const u = qyi;
+  const t = qyj - qyi;
   // Uniform w=u:
   const Vu = (u * L) / 2; // force at each end in local +y
   const Mu = (u * L * L) / 12; // moment magnitude at end i (sign below)
@@ -249,7 +259,7 @@ function equivNodalLocal(qi: number, qj: number, L: number): number[] {
   // FEM at i is +M (load tends to rotate end i CCW if fixed), at j it's −M.
   const Mi = Mu + Mti;
   const Mj = -(Mu + Mtj);
-  return [0, Vi, Mi, 0, Vj, Mj];
+  return [Ni, Vi, Mi, Nj, Vj, Mj];
 }
 
 export function solve(inp: SolveInput): Solution {
@@ -395,15 +405,18 @@ function solveLinear(inp: SolveInput): Solution {
     );
     let kLocal = add(frame2dLocalK(mEA, mEI, L), springKLocal);
 
-    // Distributed load (given along global -y); project to member-local y.
-    // Global load density at any s along member is (0, -w_global(s)). Local y
-    // axis = (-s, c) (90° CCW from x̂=(c,s)), so local-y component = (-w) * c.
+    // Distributed load (given in global y); project to both member-local axes.
+    // Local x axis = (c, s), local y axis = (-s, c), so a global load
+    // density (0, wG) has qx = wG*s and qy = wG*c. Keeping both components
+    // preserves the real global gravity load for sloped and vertical members.
     const dload = distByMember.get(mIdx) ?? [0, 0];
-    const wiG = dload[0]; // user passes negative for downward (global -y)
+    const wiG = dload[0]; // user passes negative for downward (global y)
     const wjG = dload[1];
-    const qi = wiG * c; // project global (0, wG) onto local +y axis (-s, c)
+    const qxi = wiG * s;
+    const qxj = wjG * s;
+    const qi = wiG * c;
     const qj = wjG * c;
-    const feL = equivNodalLocal(qi, qj, L);
+    const feL = equivNodalLocal(qxi, qxj, qi, qj, L);
     const released = releasesByMember.get(mIdx) ?? [];
     const condensed = condenseReleasedRotations(kLocal, feL, released);
     kLocal = condensed.kLocal;
