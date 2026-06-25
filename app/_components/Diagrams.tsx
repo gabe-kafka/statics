@@ -500,6 +500,14 @@ export function Diagrams({
   const reactionAudit = {
     rx: pointReactions.reduce((sum, reaction) => sum + reaction.Rx, 0),
     ry: pointReactions.reduce((sum, reaction) => sum + reaction.Ry, 0),
+    rxAbs: pointReactions.reduce(
+      (sum, reaction) => sum + Math.abs(reaction.Rx),
+      0,
+    ),
+    ryAbs: pointReactions.reduce(
+      (sum, reaction) => sum + Math.abs(reaction.Ry),
+      0,
+    ),
   };
 
   const loadVisualMax = Math.max(
@@ -2541,13 +2549,14 @@ function LoadResultantReadout({
   x: number;
   y: number;
   loadAudit: LoadResultantAudit;
-  reactionAudit: { rx: number; ry: number } | null;
+  reactionAudit: { rx: number; ry: number; rxAbs: number; ryAbs: number } | null;
 }) {
   const rows = [
     `GLOBAL LOAD   Fx ${fmt(loadAudit.globalFx)} k   Fy ${fmt(loadAudit.globalFy)} k`,
     ...(reactionAudit
       ? [
-          `SUPPORT SUM   Rx ${fmt(reactionAudit.rx)} k   Ry ${fmt(reactionAudit.ry)} k`,
+          `SUPPORT RX    signed ${fmt(reactionAudit.rx)} k   abs ${fmt(reactionAudit.rxAbs)} k`,
+          `SUPPORT RY    signed ${fmt(reactionAudit.ry)} k   abs ${fmt(reactionAudit.ryAbs)} k`,
         ]
       : []),
     `DIST LOCAL-X  signed ${fmt(loadAudit.distributedLocalX)} k   abs ${fmt(loadAudit.distributedLocalXAbs)} k`,

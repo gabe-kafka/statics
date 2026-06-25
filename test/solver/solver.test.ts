@@ -306,6 +306,65 @@ test("projected sawtooth load audit separates global and member-local X", () => 
   );
 });
 
+test("three-hinged sawtooth bay horizontal thrust matches hand statics", () => {
+  const p = 0.33;
+  const leftRun = 11;
+  const rightRun = 21;
+  const rise = 6.5;
+  const span = leftRun + rightRun;
+  const leftLoad = p * leftRun;
+  const rightLoad = p * rightRun;
+  const rightRy =
+    (leftLoad * (leftRun / 2) +
+      rightLoad * (leftRun + rightRun / 2)) /
+    span;
+  const leftRy = leftLoad + rightLoad - rightRy;
+  const expectedH =
+    (leftRy * leftRun - leftLoad * (leftRun / 2)) / rise;
+
+  const result = solveRequest({
+    nodes: [
+      [0, 0],
+      [leftRun, rise],
+      [span, 0],
+    ],
+    members: [
+      { i: 0, j: 1, E: 29000, I: 100, A: 10 },
+      { i: 1, j: 2, E: 29000, I: 100, A: 10 },
+    ],
+    supports: [
+      { node: 0, Rx: true, Ry: true, Rm: false },
+      { node: 2, Rx: true, Ry: true, Rm: false },
+    ],
+    distLoads: [
+      { member: 0, wi: -p, wj: -p, projected: true },
+      { member: 1, wi: -p, wj: -p, projected: true },
+    ],
+    hinges: [
+      { member: 0, end: "j" },
+      { member: 1, end: "i" },
+    ],
+    samplesPerMember: 8,
+    include: ["data"],
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const leftReaction = result.reactions.find((reaction) => reaction.node === 0);
+  const rightReaction = result.reactions.find((reaction) => reaction.node === 2);
+
+  assert.ok(leftReaction);
+  assert.ok(rightReaction);
+  assert.ok(
+    Math.abs(leftReaction.Rx - expectedH) < 1e-9,
+    `expected left Rx ${expectedH}, got ${leftReaction.Rx}`,
+  );
+  assert.ok(
+    Math.abs(rightReaction.Rx + expectedH) < 1e-9,
+    `expected right Rx ${-expectedH}, got ${rightReaction.Rx}`,
+  );
+});
+
 test("uniform spring authoring supports compression-only checkbox", () => {
   const parsed = parseFields({
     ...DEFAULT_FIELDS,
