@@ -199,19 +199,28 @@ function projectFrameWithInsets(
   const ymax = ys.length ? Math.max(...ys) : 1;
   const rawYspan = ymax - ymin;
   const xspan = Math.max(xmax - xmin, 1);
-  const yspan = Math.max(rawYspan, 1);
   const usableW = Math.max(width - insets.left - insets.right, 1);
   const usableH = Math.max(height - insets.top - insets.bottom, 1);
+  if (Math.abs(rawYspan) < 1e-9) {
+    const scale = usableW / xspan;
+    const contentW = xspan * scale;
+    const ox = insets.left + (usableW - contentW) / 2;
+    const flatY = insets.top + usableH / 2;
+    return {
+      X: (x: number) => ox + (x - xmin) * scale,
+      Y: () => flatY,
+    };
+  }
+
+  const yspan = rawYspan;
   const scale = Math.min(usableW / xspan, usableH / yspan);
   const contentW = xspan * scale;
   const contentH = yspan * scale;
   const ox = insets.left + (usableW - contentW) / 2;
   const oy = insets.top + (usableH - contentH) / 2;
-  const flatY = oy + contentH / 2;
   return {
     X: (x: number) => ox + (x - xmin) * scale,
-    Y: (y: number) =>
-      Math.abs(rawYspan) < 1e-9 ? flatY : oy + (ymax - y) * scale,
+    Y: (y: number) => oy + (ymax - y) * scale,
   };
 }
 

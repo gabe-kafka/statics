@@ -32,6 +32,35 @@ test("FBD SVG renders end moment releases as white circles double the node radiu
   );
 });
 
+test("FBD SVG fits flat beams to available panel width", () => {
+  const request: SolveRequest = {
+    nodes: [
+      [0, 0],
+      [10, 0],
+    ],
+    members: [{ i: 0, j: 1, E: 29000, I: 100, A: 10 }],
+    supports: [
+      { node: 0, Rx: true, Ry: true, Rm: false },
+      { node: 1, Rx: false, Ry: true, Rm: false },
+    ],
+    pointLoads: [{ node: 1, Fx: 0, Fy: -10 }],
+    samplesPerMember: 10,
+    include: ["data", "svg"],
+    theme: "light",
+  };
+  const result = solveRequest(request);
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.ok(result.svg?.fbd);
+  const beamLength = longestBeamLineLength(result.svg.fbd);
+  assert.ok(
+    beamLength > 600,
+    `expected flat beam to span the FBD panel, got ${beamLength}`,
+  );
+  assertSvgCoordinatesInsideViewBox(result.svg.fbd, "flat beam FBD");
+});
+
 test("FBD SVG renders signed Rx and Ry reactions without clipping", () => {
   const request = roofFrameRequest(11);
   const result = solveRequest(request);
@@ -313,6 +342,25 @@ function reactionArrowShafts(
   }
 
   return out;
+}
+
+function longestBeamLineLength(svg: string): number {
+  let longest = 0;
+  const number = "-?\\d+(?:\\.\\d+)?(?:e[-+]?\\d+)?";
+  const beamLine = new RegExp(
+    `<line x1="(${number})" y1="(${number})" x2="(${number})" y2="(${number})" stroke="#dc2626" stroke-width="2\\.5"`,
+    "gi",
+  );
+
+  for (const match of svg.matchAll(beamLine)) {
+    const x1 = Number(match[1]);
+    const y1 = Number(match[2]);
+    const x2 = Number(match[3]);
+    const y2 = Number(match[4]);
+    longest = Math.max(longest, Math.hypot(x2 - x1, y2 - y1));
+  }
+
+  return longest;
 }
 
 function mulberry32(seed: number): () => number {
